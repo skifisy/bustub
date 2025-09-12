@@ -11,6 +11,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "buffer/buffer_pool_manager.h"
+#include <cstdlib>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include "common/config.h"
+#include "common/macros.h"
+#include "storage/disk/disk_scheduler.h"
+#include "storage/page/page_guard.h"
 
 namespace bustub {
 
@@ -122,7 +131,16 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
  *
  * @return The page ID of the newly allocated page.
  */
-auto BufferPoolManager::NewPage() -> page_id_t { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+auto BufferPoolManager::NewPage() -> page_id_t {
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
+  // 通过increaseDiskSpace来确保在磁盘上有足够的空间
+  page_id_t page_size = next_page_id_ + 1;
+  page_id_t page_id = next_page_id_;
+  ++next_page_id_;
+  disk_scheduler_->IncreaseDiskSpace(page_size);
+  // TODO(question): 问题，申请一个page的时候，是否需要给它提供一个内存页，也就是frame？
+  return page_id;
+}
 
 /**
  * @brief Removes a page from the database, both on disk and in memory.
@@ -150,7 +168,13 @@ auto BufferPoolManager::NewPage() -> page_id_t { UNIMPLEMENTED("TODO(P1): Add im
  * @param page_id The page ID of the page we want to delete.
  * @return `false` if the page exists but could not be deleted, `true` if the page didn't exist or deletion succeeded.
  */
-auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
+  // 从内存和磁盘中删除该page
+  // 如果被pinned了，那么返回false
+
+  // 注意所有用到page和page元信息的地方！
+  UNIMPLEMENTED("TODO(P1): Add implementation.");
+}
 
 /**
  * @brief Acquires an optional write-locked guard over a page of data. The user can specify an `AccessType` if needed.
@@ -192,7 +216,8 @@ auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool { UNIMPLEMENTED("T
  * returns `std::nullopt`, otherwise returns a `WritePageGuard` ensuring exclusive and mutable access to a page's data.
  */
 auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_type) -> std::optional<WritePageGuard> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  frame_id_t frame_id = AllocateFrame(page_id);
+  return WritePageGuard(page_id, frames_[frame_id], replacer_, bpm_latch_);
 }
 
 /**
@@ -220,7 +245,10 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
  * returns `std::nullopt`, otherwise returns a `ReadPageGuard` ensuring shared and read-only access to a page's data.
  */
 auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_type) -> std::optional<ReadPageGuard> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  // page data只有通过page guards访问（用于保证线程安全）
+  // 用户可以通过ReadPageGuard读取页面，多个线程可以同时读取同一个page
+  frame_id_t frame_id = AllocateFrame(page_id);
+  return ReadPageGuard(page_id, frames_[frame_id], replacer_, bpm_latch_);
 }
 
 /**
@@ -244,7 +272,6 @@ auto BufferPoolManager::WritePage(page_id_t page_id, AccessType access_type) -> 
     fmt::println(stderr, "\n`CheckedWritePage` failed to bring in page {}\n", page_id);
     std::abort();
   }
-
   return std::move(guard_opt).value();
 }
 
@@ -289,7 +316,21 @@ auto BufferPoolManager::ReadPage(page_id_t page_id, AccessType access_type) -> R
  * @param page_id The page ID of the page to be flushed.
  * @return `false` if the page could not be found in the page table, otherwise `true`.
  */
-auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
+  auto it = page_table_.find(page_id);
+  if (it == page_table_.end()) {
+    return false;
+  }
+  frame_id_t frame_id = it->second;
+  auto frame = frames_[frame_id];
+  DiskRequest r = {true, frame->GetDataMut(), page_id, {}};
+
+  std::future<bool> fut = r.callback_.get_future();
+  disk_scheduler_->Schedule(std::move(r));
+  bool ret = fut.get();
+  BUSTUB_ASSERT(ret == true, "flush error!");
+  return true;
+}
 
 /**
  * @brief Flushes all page data that is in memory to disk.
@@ -301,7 +342,11 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool { UNIMPLEMENTED("TO
  *
  * TODO(P1): Add implementation
  */
-void BufferPoolManager::FlushAllPages() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+void BufferPoolManager::FlushAllPages() { 
+  // 所有存在于memory中的page，写入disk
+  // TODO(question) 直接遍历frames_？遍历维护的page_table？
+
+ }
 
 /**
  * @brief Retrieves the pin count of a page. If the page does not exist in memory, return `std::nullopt`.
@@ -319,16 +364,53 @@ void BufferPoolManager::FlushAllPages() { UNIMPLEMENTED("TODO(P1): Add implement
  * page we want to look at. Instead, you can simply use an atomic `load` to safely load the value stored. You will still
  * need to take the buffer pool latch, however.
  *
- * Again, if you are unfamiliar with atomic types, see the official C++ docs
- * [here](https://en.cppreference.com/w/cpp/atomic/atomic).
- *
  * TODO(P1): Add implementation
  *
  * @param page_id The page ID of the page we want to get the pin count of.
  * @return std::optional<size_t> The pin count if the page exists, otherwise `std::nullopt`.
  */
 auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
+  frame_id_t frame_id = page_table_[page_id];
+  auto &frame = frames_[frame_id];
+  return frame->pin_count_.load();
+}
+
+auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> frame_id_t {
+  auto read_page_from_disk = [this](page_id_t page_id, std::shared_ptr<FrameHeader> &frame) {
+    DiskRequest r = {false, frame->GetDataMut(), page_id, {}};
+    auto future = r.callback_.get_future();
+    disk_scheduler_->Schedule(std::move(r));
+    bool ret = future.get();  // 阻塞等待磁盘读取
+    BUSTUB_ASSERT(ret, true);
+  };
+
+  // 1. 页表中是否存在该page
+  if (auto it = page_table_.find(page_id); it != page_table_.end()) {
+    return it->second;
+  }
+  // 2. 存在空闲frame
+  if (!free_frames_.empty()) {
+    frame_id_t frame_id = free_frames_.back();
+    free_frames_.pop_back();
+    page_table_[page_id] = frame_id;
+    read_page_from_disk(page_id, frames_[frame_id]);
+    return frame_id;
+  }
+  // 3. 不存在空闲frame，执行frame淘汰机制
+  auto frame_id = replacer_->Evict();
+  
+  if (!frame_id) {
+    fmt::println(stderr, "\nframes are all pinned, can't allocate a free frame\n");
+    std::abort();
+  }
+  page_table_[page_id] = frame_id.value();
+  auto frame = frames_[frame_id.value()];
+  read_page_from_disk(page_id, frame);
+
+  // TODO(question)  4. 处理脏页的问题
+
+  return frame_id.value();
 }
 
 }  // namespace bustub

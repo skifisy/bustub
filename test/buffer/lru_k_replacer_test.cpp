@@ -16,7 +16,45 @@
 
 namespace bustub {
 
-TEST(LRUKReplacerTest, DISABLED_SampleTest) {
+TEST(LRUKReplacerTest, LRUKListTest) {
+  LRUKList list;
+  LRUKNode node1;
+  LRUKNode node2;
+  LRUKNode node3;
+  LRUKNode node4;
+  node1.fid_ = 1;
+  node2.fid_ = 2;
+  node3.fid_ = 3;
+  node4.fid_ = 4;
+  list.PushBack(&node1);
+  ASSERT_EQ(list.Back()->fid_, 1);
+  list.PushBack(&node2);
+  list.PushFront(&node3);
+  list.PushFront(&node4);
+  ASSERT_EQ(list.Size(), 4);
+  ASSERT_EQ(list.Back()->fid_, 2);
+
+  auto head = list.Head();
+  head = head->next_;
+  ASSERT_EQ(head->fid_, 4);
+  head = head->next_;
+  ASSERT_EQ(head->fid_, 3);
+  head = head->next_;
+  ASSERT_EQ(head->fid_, 1);
+  head = head->next_;
+  ASSERT_EQ(head->fid_, 2);
+  
+  list.Erase(&node4);
+  ASSERT_EQ(list.Head()->next_->fid_, 3);
+  list.Erase(&node3);
+  ASSERT_EQ(list.Size(), 2);
+  list.Erase(&node2);
+  ASSERT_EQ(list.Back()->fid_, 1);
+  list.Erase(&node1);
+  ASSERT_EQ(list.Size(), 0);
+}
+
+TEST(LRUKReplacerTest, SampleTest) {
   // Note that comparison with `std::nullopt` always results in `false`, and if the optional type actually does contain
   // a value, the comparison will compare the inner value.
   // See: https://devblogs.microsoft.com/oldnewthing/20211004-00/?p=105754

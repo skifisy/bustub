@@ -183,7 +183,7 @@ class WritePageGuard {
    * Since the buffer pool cannot know when this `WritePageGuard` gets destructed, we maintain a pointer to the buffer
    * pool's replacer in order to set the frame as evictable on destruction.
    */
-  std::shared_ptr<LRUKReplacer> replacer_;
+  std::shared_ptr<LRUKReplacer> replacer_;  // 不知道WritePageGuard什么时候析构，所以通过replacer将frame设置为evictable
 
   /**
    * @brief A shared pointer to the buffer pool's latch.
@@ -191,7 +191,7 @@ class WritePageGuard {
    * Since the buffer pool cannot know when this `WritePageGuard` gets destructed, we maintain a pointer to the buffer
    * pool's latch for when we need to update the frame's eviction state in the buffer pool replacer.
    */
-  std::shared_ptr<std::mutex> bpm_latch_;
+  std::shared_ptr<std::mutex> bpm_latch_;  // 用于更新buffer_pool_manager中frame的eviction状态
 
   /**
    * @brief The validity flag for this `WritePageGuard`.
@@ -211,6 +211,7 @@ class WritePageGuard {
    * If you want extra (non-existent) style points, and you want to be extra fancy, then you can look into the
    * `std::unique_lock` type and use that for the latching mechanism instead of manually calling `lock` and `unlock`.
    */
+  // TODO(question) 增加一个future变量，只有在可以GetData的时候才能获取future
 };
 
 }  // namespace bustub

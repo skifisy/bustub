@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <deque>
 #include <limits>
 #include <list>
 #include <mutex>  // NOLINT
@@ -27,14 +29,73 @@ namespace bustub {
 enum class AccessType { Unknown = 0, Lookup, Scan, Index };
 
 class LRUKNode {
- private:
+ public:
   /** History of last seen K timestamps of this page. Least recent timestamp stored in front. */
   // Remove maybe_unused if you start using them. Feel free to change the member variables as you want.
 
-  [[maybe_unused]] std::list<size_t> history_;
+  [[maybe_unused]] std::list<size_t> history_;  // 最近k次访问的时间戳
   [[maybe_unused]] size_t k_;
   [[maybe_unused]] frame_id_t fid_;
   [[maybe_unused]] bool is_evictable_{false};
+  LRUKNode *prev_{nullptr};
+  LRUKNode *next_{nullptr};
+};
+
+class LRUKList {
+ public:
+  LRUKList() {
+    head_.next_ = &head_;
+    head_.prev_ = &head_;
+  }
+
+  auto Erase(LRUKNode *node) -> void {
+    BUSTUB_ASSERT(size_ > 0, "LRUKList is empty");
+    --size_;
+    auto prev = node->prev_;
+    prev->next_ = node->next_;
+    prev->next_->prev_ = prev;
+    node->prev_ = nullptr;
+    node->next_ = nullptr;
+  }
+
+  auto PushBack(LRUKNode *node) -> void {
+    ++size_;
+    LRUKNode *tail = head_.prev_;
+    node->next_ = &head_;
+    node->prev_ = tail;
+    tail->next_ = node;
+    head_.prev_ = node;
+  }
+
+  auto PushFront(LRUKNode *node) -> void {
+    ++size_;
+    LRUKNode *first = head_.next_;
+    head_.next_ = node;
+    first->prev_ = node;
+    node->prev_ = &head_;
+    node->next_ = first;
+  }
+
+  auto PopBack(LRUKNode *node) -> LRUKNode * {
+    BUSTUB_ASSERT(size_ > 0, "LRUKList is empty");
+    --size_;
+    LRUKNode *last = head_.prev_;
+    last->prev_->next_ = last->next_;
+    head_.prev_ = last->prev_;
+    last->next_ = nullptr;
+    last->prev_ = nullptr;
+    return last;
+  }
+
+  auto Size() const -> size_t { return size_; }
+
+  auto Back() -> LRUKNode * { return head_.prev_; }
+
+  auto Head() -> LRUKNode * { return &head_; }
+
+ private:
+  LRUKNode head_;
+  size_t size_{0};
 };
 
 /**
@@ -151,12 +212,14 @@ class LRUKReplacer {
  private:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  [[maybe_unused]] std::unordered_map<frame_id_t, LRUKNode> node_store_;
+  std::unordered_map<frame_id_t, LRUKNode> node_store_;
+  LRUKList history_list_;
+  LRUKList cache_list_;
   [[maybe_unused]] size_t current_timestamp_{0};
-  [[maybe_unused]] size_t curr_size_{0};
-  [[maybe_unused]] size_t replacer_size_;
-  [[maybe_unused]] size_t k_;
-  [[maybe_unused]] std::mutex latch_;
+  size_t curr_size_{0};  // 当前可以被evict的frame
+  const size_t replacer_size_;  // frame总容量
+  size_t k_;
+  std::mutex latch_;
 };
 
 }  // namespace bustub

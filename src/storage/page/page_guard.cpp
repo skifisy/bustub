@@ -11,6 +11,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "storage/page/page_guard.h"
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <utility>
+#include "common/util/atomic_util.h"
+#include "storage/disk/disk_scheduler.h"
 
 namespace bustub {
 
@@ -28,17 +34,20 @@ namespace bustub {
  */
 ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> frame,
                              std::shared_ptr<LRUKReplacer> replacer, std::shared_ptr<std::mutex> bpm_latch)
-    : page_id_(page_id), frame_(std::move(frame)), replacer_(std::move(replacer)), bpm_latch_(std::move(bpm_latch)) {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+    : page_id_(page_id),
+      frame_(std::move(frame)),
+      replacer_(std::move(replacer)),
+      bpm_latch_(std::move(bpm_latch)),
+      is_valid_(true) {
+  frame_->pin_count_.fetch_add(1);
+  replacer_->RecordAccess(frame_->frame_id_);
+  replacer_->SetEvictable(frame_->frame_id_, false);
 }
 
 /**
  * @brief The move constructor for `ReadPageGuard`.
  *
  * ### Implementation
- *
- * If you are unfamiliar with move semantics, please familiarize yourself with learning materials online. There are many
- * great resources (including articles, Microsoft tutorials, YouTube videos) that explain this in depth.
  *
  * Make sure you invalidate the other guard, otherwise you might run into double free problems! For both objects, you
  * need to update _at least_ 5 fields each.
@@ -47,7 +56,12 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
  *
  * @param that The other page guard.
  */
-ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept {}
+ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept
+    : page_id_(std::exchange(that.page_id_, 0)),
+      frame_(std::exchange(that.frame_, nullptr)),
+      replacer_(std::exchange(that.replacer_, nullptr)),
+      bpm_latch_(std::exchange(that.bpm_latch_, nullptr)),
+      is_valid_(std::exchange(that.is_valid_, false)) {}
 
 /**
  * @brief The move assignment operator for `ReadPageGuard`.
@@ -66,7 +80,14 @@ ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept {}
  * @param that The other page guard.
  * @return ReadPageGuard& The newly valid `ReadPageGuard`.
  */
-auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & { return *this; }
+auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & {
+  page_id_ = std::exchange(that.page_id_, 0);
+  frame_ = std::exchange(that.frame_, nullptr);
+  replacer_ = std::exchange(that.replacer_, nullptr);
+  bpm_latch_ = std::exchange(that.bpm_latch_, nullptr);
+  is_valid_ = std::exchange(that.is_valid_, false);
+  return *this;
+}
 
 /**
  * @brief Gets the page ID of the page this guard is protecting.
@@ -103,7 +124,18 @@ auto ReadPageGuard::IsDirty() const -> bool {
  *
  * TODO(P1): Add implementation.
  */
-void ReadPageGuard::Drop() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+void ReadPageGuard::Drop() {
+  // 注意：PageGuard可能无效！
+  if (!is_valid_) {
+    return;
+  }
+  AtomicUtil::SafeDecrementIfPositive(frame_->pin_count_);
+  // frame_->pin_count_.fetch_sub(1);
+  std::unique_lock<std::shared_mutex> lock(frame_->rwlatch_);
+  if (frame_->pin_count_ == 0) {
+    replacer_->SetEvictable(frame_->frame_id_, true);
+  }
+}
 
 /** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
 ReadPageGuard::~ReadPageGuard() { Drop(); }
@@ -126,8 +158,17 @@ ReadPageGuard::~ReadPageGuard() { Drop(); }
  */
 WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> frame,
                                std::shared_ptr<LRUKReplacer> replacer, std::shared_ptr<std::mutex> bpm_latch)
-    : page_id_(page_id), frame_(std::move(frame)), replacer_(std::move(replacer)), bpm_latch_(std::move(bpm_latch)) {
-  UNIMPLEMENTED("TODO(P1): Add implementation.");
+    : page_id_(page_id),
+      frame_(std::move(frame)),
+      replacer_(std::move(replacer)),
+      bpm_latch_(std::move(bpm_latch)),
+      is_valid_(true) {
+  // 1. pin住frame
+  frame_->pin_count_.fetch_add(1);
+  // 2. replacer记录次数
+  replacer_->RecordAccess(frame_->frame_id_);
+  // 可能frame先进了replacer_中，出来一次，又进去一次
+  replacer_->SetEvictable(frame_->frame_id_, false);
 }
 
 /**
@@ -145,7 +186,12 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
  *
  * @param that The other page guard.
  */
-WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept {}
+WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept
+    : page_id_(std::exchange(that.page_id_, 0)),
+      frame_(std::exchange(that.frame_, nullptr)),
+      replacer_(std::exchange(that.replacer_, nullptr)),
+      bpm_latch_(std::exchange(that.bpm_latch_, nullptr)),
+      is_valid_(std::exchange(that.is_valid_, false)) {}
 
 /**
  * @brief The move assignment operator for `WritePageGuard`.
@@ -164,7 +210,14 @@ WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept {}
  * @param that The other page guard.
  * @return WritePageGuard& The newly valid `WritePageGuard`.
  */
-auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard & { return *this; }
+auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard & {
+  page_id_ = std::exchange(that.page_id_, 0);
+  frame_ = std::exchange(that.frame_, nullptr);
+  replacer_ = std::exchange(that.replacer_, nullptr);
+  bpm_latch_ = std::exchange(that.bpm_latch_, nullptr);
+  is_valid_ = std::exchange(that.is_valid_, false);
+  return *this;
+}
 
 /**
  * @brief Gets the page ID of the page this guard is protecting.
@@ -209,7 +262,21 @@ auto WritePageGuard::IsDirty() const -> bool {
  *
  * TODO(P1): Add implementation.
  */
-void WritePageGuard::Drop() { UNIMPLEMENTED("TODO(P1): Add implementation."); }
+void WritePageGuard::Drop() {
+  // 检查有效性
+  if (!is_valid_) {
+    return;
+  }
+  AtomicUtil::SafeDecrementIfPositive(frame_->pin_count_);
+  // frame_->pin_count_.fetch_sub(1);
+  std::unique_lock<std::shared_mutex> lock(frame_->rwlatch_);
+  if (frame_->pin_count_ == 0) {
+    replacer_->SetEvictable(frame_->frame_id_, true);
+  }
+  // write-through，如果是赃页，直接写入磁盘
+  // TODO(question) 如何知道一个page是否为脏页
+  frame_->is_dirty_ = true;
+}
 
 /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */
 WritePageGuard::~WritePageGuard() { Drop(); }
