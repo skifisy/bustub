@@ -216,7 +216,7 @@ class LRUKReplacer {
   LRUKList history_list_;
   LRUKList cache_list_;
   [[maybe_unused]] size_t current_timestamp_{0};
-  size_t curr_size_{0};  // 当前可以被evict的frame
+  size_t curr_size_{0};         // 当前可以被evict的frame
   const size_t replacer_size_;  // frame总容量
   size_t k_;
   std::mutex latch_;

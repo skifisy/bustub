@@ -14,6 +14,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -88,6 +89,7 @@ class FrameHeader {
    */
   std::vector<char> data_;
 
+  page_id_t page_id_;  // 该frame属于哪个page
   /**
    * TODO(P1): You may add any fields or helper functions under here that you think are necessary.
    *
@@ -128,13 +130,13 @@ class BufferPoolManager {
  private:
   /**
    * @brief 为page_id分配一个frame
-   * 
+   *
    * 与`replacer`的关系：这个刚分配的frame需要被锁定，防止被replacer淘汰
    * 方法：
    * 1. allocate后马上将其设置为in-evictable
    * 2. "某些" frame不交给replacer管理，防止被evict
    */
-  auto AllocateFrame(page_id_t page_id) -> frame_id_t;
+  auto AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t>;
 
   /** @brief The number of frames in the buffer pool. */
   const size_t num_frames_;

@@ -15,7 +15,6 @@
 #include <mutex>
 #include <shared_mutex>
 #include <utility>
-#include "common/util/atomic_util.h"
 #include "storage/disk/disk_scheduler.h"
 
 namespace bustub {
@@ -42,6 +41,7 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
   frame_->pin_count_.fetch_add(1);
   replacer_->RecordAccess(frame_->frame_id_);
   replacer_->SetEvictable(frame_->frame_id_, false);
+  frame_->rwlatch_.lock_shared();
 }
 
 /**
@@ -81,6 +81,16 @@ ReadPageGuard::ReadPageGuard(ReadPageGuard &&that) noexcept
  * @return ReadPageGuard& The newly valid `ReadPageGuard`.
  */
 auto ReadPageGuard::operator=(ReadPageGuard &&that) noexcept -> ReadPageGuard & {
+  // 1. 检查自赋值
+  if (this == &that) {
+    return *this;
+  }
+  // 2. 释放当前对象资源
+  if (is_valid_) {
+    Drop();
+  }
+  // 3. 窃取other的资源
+  // 4. 将other设置为有效但可析构状态
   page_id_ = std::exchange(that.page_id_, 0);
   frame_ = std::exchange(that.frame_, nullptr);
   replacer_ = std::exchange(that.replacer_, nullptr);
@@ -129,12 +139,13 @@ void ReadPageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
-  AtomicUtil::SafeDecrementIfPositive(frame_->pin_count_);
+  frame_->rwlatch_.unlock_shared();
+  SafeDecrementIfPositive(frame_->pin_count_);
   // frame_->pin_count_.fetch_sub(1);
-  std::unique_lock<std::shared_mutex> lock(frame_->rwlatch_);
   if (frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
+  is_valid_ = false;
 }
 
 /** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
@@ -169,6 +180,7 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
   replacer_->RecordAccess(frame_->frame_id_);
   // 可能frame先进了replacer_中，出来一次，又进去一次
   replacer_->SetEvictable(frame_->frame_id_, false);
+  frame_->rwlatch_.lock();
 }
 
 /**
@@ -211,6 +223,16 @@ WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept
  * @return WritePageGuard& The newly valid `WritePageGuard`.
  */
 auto WritePageGuard::operator=(WritePageGuard &&that) noexcept -> WritePageGuard & {
+  // 1. 检查自赋值
+  if (this == &that) {
+    return *this;
+  }
+  // 2. 释放当前对象资源
+  if (is_valid_) {
+    Drop();
+  }
+  // 3. 窃取other的资源
+  // 4. 将other设置为有效但可析构状态
   page_id_ = std::exchange(that.page_id_, 0);
   frame_ = std::exchange(that.frame_, nullptr);
   replacer_ = std::exchange(that.replacer_, nullptr);
@@ -267,15 +289,16 @@ void WritePageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
-  AtomicUtil::SafeDecrementIfPositive(frame_->pin_count_);
+  SafeDecrementIfPositive(frame_->pin_count_);
   // frame_->pin_count_.fetch_sub(1);
-  std::unique_lock<std::shared_mutex> lock(frame_->rwlatch_);
   if (frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
   // write-through，如果是赃页，直接写入磁盘
   // TODO(question) 如何知道一个page是否为脏页
   frame_->is_dirty_ = true;
+  frame_->rwlatch_.unlock();
+  is_valid_ = false;
 }
 
 /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */

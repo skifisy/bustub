@@ -19,7 +19,6 @@
 #include "common/config.h"
 #include "common/exception.h"
 #include "common/macros.h"
-#include "common/util/time_util.h"
 
 namespace bustub {
 
@@ -63,7 +62,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
   auto it = node_store_.find(frame_id);
   if (it == node_store_.end()) {
     // 插入
-    LRUKNode node{{TimeUtil::GetCurrentTimestamp()}, 1, frame_id, false};
+    LRUKNode node{{}, 1, frame_id, false};
     node_store_.emplace(frame_id, std::move(node));
     BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1");
     history_list_.PushFront(&node_store_[frame_id]);
@@ -73,21 +72,17 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
     auto &node = it->second;
     ++node.k_;
     history_list_.PushFront(&node);
-    node.history_.emplace_front(TimeUtil::GetCurrentTimestamp());
     BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
   } else {
     // 更新访问次数
     auto &node = it->second;
     ++node.k_;
-    node.history_.emplace_front(TimeUtil::GetCurrentTimestamp());
     if (node.k_ == k_) {
       // 次数等于k时，移动到cache_list
       history_list_.Erase(&node);
       cache_list_.PushFront(&node);
     } else if (node.k_ < k_) {
-      // 如果访问次数小于k_次，移动到最前
-      history_list_.Erase(&node);
-      history_list_.PushFront(&node);
+      // history_list使用FIFO策略
     } else {
       // 访问次数大于k_次，移动到最前
       cache_list_.Erase(&node);

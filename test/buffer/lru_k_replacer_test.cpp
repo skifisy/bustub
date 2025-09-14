@@ -43,7 +43,7 @@ TEST(LRUKReplacerTest, LRUKListTest) {
   ASSERT_EQ(head->fid_, 1);
   head = head->next_;
   ASSERT_EQ(head->fid_, 2);
-  
+
   list.Erase(&node4);
   ASSERT_EQ(list.Head()->next_->fid_, 3);
   list.Erase(&node3);
