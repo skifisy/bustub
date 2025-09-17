@@ -45,10 +45,12 @@ auto LRUKReplacer::Evict() -> std::optional<frame_id_t> {
 
   // 1. 优先剔除history_list_
   if (auto fid = evict_from_list(history_list_)) {
+    BUSTUB_ASSERT(fid.value() != -1, "frame id is invalid");
     return fid;
   }
   // 2. 然后剔除cache_list
   if (auto fid = evict_from_list(cache_list_)) {
+    BUSTUB_ASSERT(fid.value() != -1, "frame id is invalid");
     return fid;
   }
 
@@ -70,6 +72,7 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
   } else if (it->second.prev_ == nullptr) {
     // 加入store，但是并没有进入history队列，也是首次访问
     auto &node = it->second;
+    BUSTUB_ASSERT(node.k_ == 0, "first visit, node k should be 0");
     ++node.k_;
     history_list_.PushFront(&node);
     BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
@@ -101,6 +104,7 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
     // 如果不存在该node，那么插入到node_store_中
     LRUKNode node;
     node.is_evictable_ = set_evictable;
+    node.fid_ = frame_id;
     node_store_.emplace(frame_id, std::move(node));
     return;
   }

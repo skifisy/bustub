@@ -13,8 +13,10 @@
 #include <cstdio>
 #include <deque>
 #include <filesystem>
+#include <thread>
 
 #include "buffer/buffer_pool_manager.h"
+#include "common/config.h"
 #include "gtest/gtest.h"
 #include "storage/page/page_guard.h"
 
@@ -26,6 +28,18 @@ static std::filesystem::path db_fname("test.bustub");
 const size_t FRAMES = 10;
 // Note that this test assumes you are using the an LRU-K replacement policy.
 const size_t K_DIST = 5;
+
+TEST(BufferPoolManagerTest, IsDirtyTest) {
+  auto disk_manager = std::make_shared<DiskManager>(db_fname);
+  auto bpm = std::make_shared<BufferPoolManager>(2, disk_manager.get(), K_DIST);
+
+  // New完一个Page应该给它分配对应的Frame，并标记为dirty
+  page_id_t pid0 = bpm->NewPage();
+  auto page_guard = bpm->ReadPage(pid0);
+  auto data = page_guard.GetData();
+  bool ret = std::all_of(data, data + BUSTUB_PAGE_SIZE, [](unsigned char c) { return c == 0; });
+  ASSERT_TRUE(ret);
+}
 
 TEST(BufferPoolManagerTest, VeryBasicTest) {
   // A very basic test.
@@ -426,4 +440,49 @@ TEST(BufferPoolManagerTest, EvictableTest) {
   }
 }
 
+TEST(BufferPoolManagerTest, ConcurrentReadWriteTest) {
+  auto disk_manager = std::make_shared<DiskManager>(db_fname);
+  auto bpm = std::make_shared<BufferPoolManager>(FRAMES, disk_manager.get(), K_DIST);
+
+  // Reader和Writer同时竞争
+  auto pid = bpm->NewPage();
+  std::atomic<size_t> write_count = 0;
+  std::atomic<size_t> read_count = 0;
+  std::atomic<bool> start = false;
+  std::atomic<bool> stop = false;
+  std::vector<std::thread> readers;
+  std::vector<std::thread> writers;
+  std::thread reader([&]() {
+    while (!start.load()) {
+    }
+    while (!stop.load()) {
+      auto guard = bpm->ReadPage(pid);
+      read_count++;
+    }
+  });
+
+  std::thread writer([&]() {
+    while (!start.load()) {
+    }
+    while (!stop.load()) {
+      auto guard = bpm->WritePage(pid);
+      size_t count = write_count.load();
+      strcpy(guard.GetDataMut(), std::to_string(count).c_str());  // NOLINT
+      write_count++;
+    }
+  });
+
+  // 主线程
+  start.store(true);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  stop.store(true);
+  reader.join();
+  writer.join();
+
+  ReadPageGuard guard = bpm->ReadPage(pid);
+  size_t final_write_count = write_count.load();
+  // string_to_int
+  size_t last_value = std::stoi(guard.GetData());
+  ASSERT_EQ(final_write_count - 1, last_value);
+}
 }  // namespace bustub

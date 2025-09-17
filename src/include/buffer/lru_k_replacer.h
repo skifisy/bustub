@@ -34,8 +34,8 @@ class LRUKNode {
   // Remove maybe_unused if you start using them. Feel free to change the member variables as you want.
 
   [[maybe_unused]] std::list<size_t> history_;  // 最近k次访问的时间戳
-  [[maybe_unused]] size_t k_;
-  [[maybe_unused]] frame_id_t fid_;
+  [[maybe_unused]] size_t k_{0};
+  [[maybe_unused]] frame_id_t fid_{-1};
   [[maybe_unused]] bool is_evictable_{false};
   LRUKNode *prev_{nullptr};
   LRUKNode *next_{nullptr};
@@ -46,6 +46,7 @@ class LRUKList {
   LRUKList() {
     head_.next_ = &head_;
     head_.prev_ = &head_;
+    head_.fid_ = -1;
   }
 
   auto Erase(LRUKNode *node) -> void {

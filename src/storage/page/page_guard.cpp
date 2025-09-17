@@ -140,9 +140,12 @@ void ReadPageGuard::Drop() {
     return;
   }
   frame_->rwlatch_.unlock_shared();
-  SafeDecrementIfPositive(frame_->pin_count_);
-  // frame_->pin_count_.fetch_sub(1);
-  if (frame_->pin_count_ == 0) {
+  // SafeDecrementIfPositive(frame_->pin_count_);
+  // // frame_->pin_count_.fetch_sub(1);
+  // if (frame_->pin_count_ == 0) {
+  //   replacer_->SetEvictable(frame_->frame_id_, true);
+  // }
+  if (--frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
   is_valid_ = false;
@@ -289,15 +292,14 @@ void WritePageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
-  SafeDecrementIfPositive(frame_->pin_count_);
-  // frame_->pin_count_.fetch_sub(1);
-  if (frame_->pin_count_ == 0) {
-    replacer_->SetEvictable(frame_->frame_id_, true);
-  }
   // write-through，如果是赃页，直接写入磁盘
   // TODO(question) 如何知道一个page是否为脏页
   frame_->is_dirty_ = true;
   frame_->rwlatch_.unlock();
+  // 先unlock再decrement，防止latch失效
+  if (--frame_->pin_count_ == 0) {
+    replacer_->SetEvictable(frame_->frame_id_, true);
+  }
   is_valid_ = false;
 }
 

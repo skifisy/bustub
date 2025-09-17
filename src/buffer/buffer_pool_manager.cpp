@@ -18,6 +18,7 @@
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
+#include <utility>
 #include <vector>
 #include "common/config.h"
 #include "common/macros.h"
@@ -136,13 +137,15 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
  * @return The page ID of the newly allocated page.
  */
 auto BufferPoolManager::NewPage() -> page_id_t {
-  std::lock_guard<std::mutex> lock(*bpm_latch_);
+  std::unique_lock<std::mutex> lock(*bpm_latch_);
   // 通过increaseDiskSpace来确保在磁盘上有足够的空间
   page_id_t page_size = next_page_id_ + 1;
   page_id_t page_id = next_page_id_;
   ++next_page_id_;
   disk_scheduler_->IncreaseDiskSpace(page_size);
   // TODO(question): 问题，申请一个page的时候，是否需要给它提供一个内存页，也就是frame？
+  lock.unlock();
+  AllocateFrame(page_id, false);
   return page_id;
 }
 
@@ -340,7 +343,7 @@ auto BufferPoolManager::ReadPage(page_id_t page_id, AccessType access_type) -> R
  * You should probably leave implementing this function until after you have completed `CheckedReadPage` and
  * `CheckedWritePage`, as it will likely be much easier to understand what to do.
  *
- * TODO(P1): Add implementation
+ * @requirement 已经对bpm_latch_加锁
  *
  * @param page_id The page ID of the page to be flushed.
  * @return `false` if the page could not be found in the page table, otherwise `true`.
@@ -358,6 +361,7 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
   disk_scheduler_->Schedule(std::move(r));
   bool ret = fut.get();
   BUSTUB_ASSERT(ret == true, "flush error!");
+  frame->is_dirty_ = false;
   return true;
 }
 
@@ -374,18 +378,22 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
 void BufferPoolManager::FlushAllPages() {
   // 所有存在于memory中的page，写入disk
   // TODO(question) 直接遍历frames_？遍历维护的page_table？
+  // 是否要加ReadPageGuard?
+  // 无论是否为dirty都必须要写入磁盘吗？
   std::lock_guard lock(*bpm_latch_);
-  std::vector<std::future<bool>> future_vec;
+  std::vector<std::pair<std::shared_ptr<FrameHeader>, std::future<bool>>> future_vec;
   future_vec.reserve(page_table_.size());
   for (auto &it : page_table_) {
     frame_id_t frame_id = it.second;
     auto &frame = frames_[frame_id];
     DiskRequest r = {true, frame->GetDataMut(), it.first, {}};
-    future_vec.emplace_back(r.callback_.get_future());
+    future_vec.emplace_back(frame, r.callback_.get_future());
     disk_scheduler_->Schedule(std::move(r));
   }
-  for (auto &fut : future_vec) {
-    fut.get();
+  for (auto &pair : future_vec) {
+    pair.second.get();
+    auto &frame = pair.first;
+    frame->is_dirty_ = false;
   }
 }
 
@@ -421,7 +429,8 @@ auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> 
   return frame->pin_count_.load();
 }
 
-auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t> {
+auto BufferPoolManager::AllocateFrame(page_id_t page_id, bool read_from_disk) -> std::optional<frame_id_t> {
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
   auto read_page_from_disk = [this](page_id_t page_id, std::shared_ptr<FrameHeader> &frame) {
     DiskRequest r = {false, frame->GetDataMut(), page_id, {}};
     auto future = r.callback_.get_future();
@@ -430,7 +439,6 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     BUSTUB_ASSERT(ret, true);
   };
 
-  std::lock_guard<std::mutex> lock(*bpm_latch_);
   // 1. 页表中是否存在该page
   if (auto it = page_table_.find(page_id); it != page_table_.end()) {
     return it->second;
@@ -440,8 +448,13 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     frame_id_t frame_id = free_frames_.back();
     free_frames_.pop_back();
     page_table_[page_id] = frame_id;
+    if (read_from_disk) {
+      read_page_from_disk(page_id, frames_[frame_id]);
+    } else {
+      frames_[frame_id]->Reset();           // todo: 是否可以去掉？
+      frames_[frame_id]->is_dirty_ = true;  // 新建的frame要写回
+    }
     frames_[frame_id]->page_id_ = page_id;
-    read_page_from_disk(page_id, frames_[frame_id]);
     return frame_id;
   }
   // 3. 不存在空闲frame，执行frame淘汰机制
@@ -449,10 +462,12 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
 
   if (!frame_id) {
     return std::nullopt;
-    //   fmt::println(stderr, "\nframes are all pinned, can't allocate a free frame\n");
-    //   std::abort();
   }
-  auto frame = frames_[frame_id.value()];
+  // todo: 报错，访问一个不存在的frame
+  BUSTUB_ASSERT(frame_id.value() >= 0, "frame_id should bigger than 0!");
+  BUSTUB_ASSERT(frame_id != -1, "frame_id should not be -1!");
+  BUSTUB_ASSERT((size_t)frame_id.value() < frames_.size(), "frame_id is bigger than size!");
+  auto &frame = frames_[frame_id.value()];
   page_id_t page_id_before = frame->page_id_;
   // TODO(question)  4. 处理脏页的问题
   // write-back
@@ -462,7 +477,11 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
   page_table_[page_id] = frame_id.value();
   frame->Reset();
   frame->page_id_ = page_id;
-  read_page_from_disk(page_id, frame);
+  if (read_from_disk) {
+    read_page_from_disk(page_id, frame);
+  } else {
+    frame->is_dirty_ = true;
+  }
 
   return frame_id.value();
 }
