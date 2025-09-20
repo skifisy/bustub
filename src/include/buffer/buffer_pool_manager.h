@@ -136,7 +136,7 @@ class BufferPoolManager {
    * 1. allocate后马上将其设置为in-evictable
    * 2. "某些" frame不交给replacer管理，防止被evict
    */
-  auto AllocateFrame(page_id_t page_id, bool read_from_disk = true) -> std::optional<frame_id_t>;
+  auto AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t>;
 
   /** @brief The number of frames in the buffer pool. */
   const size_t num_frames_;

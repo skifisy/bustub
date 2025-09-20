@@ -15,7 +15,6 @@
 #include <mutex>
 #include <shared_mutex>
 #include <utility>
-#include "common/macros.h"
 #include "storage/disk/disk_scheduler.h"
 
 namespace bustub {
@@ -39,9 +38,6 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
-  frame_->pin_count_.fetch_add(1);
-  replacer_->RecordAccess(frame_->frame_id_);
-  replacer_->SetEvictable(frame_->frame_id_, false);
   frame_->rwlatch_.lock_shared();
 }
 
@@ -140,16 +136,12 @@ void ReadPageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
+  is_valid_ = false;
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
   frame_->rwlatch_.unlock_shared();
-  // SafeDecrementIfPositive(frame_->pin_count_);
-  // // frame_->pin_count_.fetch_sub(1);
-  // if (frame_->pin_count_ == 0) {
-  //   replacer_->SetEvictable(frame_->frame_id_, true);
-  // }
   if (--frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
-  is_valid_ = false;
 }
 
 /** @brief The destructor for `ReadPageGuard`. This destructor simply calls `Drop()`. */
@@ -178,12 +170,6 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
-  // 1. pin住frame
-  frame_->pin_count_.fetch_add(1);
-  // 2. replacer记录次数
-  replacer_->RecordAccess(frame_->frame_id_);
-  // 可能frame先进了replacer_中，出来一次，又进去一次
-  // replacer_->SetEvictable(frame_->frame_id_, false);
   frame_->rwlatch_.lock();
   frame_->is_dirty_ = true;
   BUSTUB_ASSERT(frame_->page_id_ == page_id, "page_id mismatch");
@@ -295,12 +281,13 @@ void WritePageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
+  is_valid_ = false;
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
   frame_->rwlatch_.unlock();
   // 先unlock再decrement，防止latch失效
   if (--frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
-  is_valid_ = false;
 }
 
 /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */

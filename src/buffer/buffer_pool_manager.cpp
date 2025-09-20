@@ -141,7 +141,6 @@ auto BufferPoolManager::NewPage() -> page_id_t {
   page_id_t page_id = next_page_id_++;
   disk_scheduler_->IncreaseDiskSpace(page_id + 1);
   // TODO(question): 问题，申请一个page的时候，是否需要给它提供一个内存页，也就是frame？
-  // AllocateFrame(page_id, false);
   return page_id;
 }
 
@@ -425,7 +424,7 @@ auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> 
   return frame->pin_count_.load();
 }
 
-auto BufferPoolManager::AllocateFrame(page_id_t page_id, bool read_from_disk) -> std::optional<frame_id_t> {
+auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t> {
   std::lock_guard<std::mutex> lock(*bpm_latch_);
   auto read_page_from_disk = [this](page_id_t page_id, std::shared_ptr<FrameHeader> &frame) {
     DiskRequest r = {false, frame->GetDataMut(), page_id, {}};
@@ -435,53 +434,43 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id, bool read_from_disk) ->
     BUSTUB_ASSERT(ret, true);
   };
 
+  frame_id_t frame_id = -1;
+
   // 1. 页表中是否存在该page
   if (auto it = page_table_.find(page_id); it != page_table_.end()) {
-    return it->second;
-  }
-  // 2. 存在空闲frame
-  if (!free_frames_.empty()) {
-    frame_id_t frame_id = free_frames_.back();
+    frame_id = it->second;
+  } else if (!free_frames_.empty()) {
+    // 2. 存在空闲frame
+    frame_id = free_frames_.back();
     free_frames_.pop_back();
     page_table_[page_id] = frame_id;
-    if (read_from_disk) {
-      read_page_from_disk(page_id, frames_[frame_id]);
-    } else {
-      frames_[frame_id]->Reset();           // todo: 是否可以去掉？
-      frames_[frame_id]->is_dirty_ = true;  // 新建的frame要写回
-    }
+    read_page_from_disk(page_id, frames_[frame_id]);
     frames_[frame_id]->page_id_ = page_id;
-    return frame_id;
-  }
-  // 3. 不存在空闲frame，执行frame淘汰机制
-  auto frame_id = replacer_->Evict();
-
-  if (!frame_id) {
-    return std::nullopt;
-  }
-  // todo: 报错，访问一个不存在的frame
-  BUSTUB_ASSERT(frame_id.value() >= 0, "frame_id should bigger than 0!");
-  BUSTUB_ASSERT(frame_id != -1, "frame_id should not be -1!");
-  BUSTUB_ASSERT((size_t)frame_id.value() < frames_.size(), "frame_id is bigger than size!");
-  auto &frame = frames_[frame_id.value()];
-  page_id_t page_id_before = frame->page_id_;
-  // TODO(question)  4. 处理脏页的问题
-  // write-back
-  FlushPage(page_id_before);
-
-  page_table_.erase(page_id_before);
-  page_table_[page_id] = frame_id.value();
-  frame->Reset();
-  frame->page_id_ = page_id;
-  if (read_from_disk) {
-    read_page_from_disk(page_id, frame);
   } else {
-    frame->is_dirty_ = true;
+    // 3. 不存在空闲frame，执行frame淘汰机制
+    auto frame_id_opt = replacer_->Evict();
+    if (!frame_id_opt.has_value()) {
+      return std::nullopt;
+    }
+    frame_id = frame_id_opt.value();
+    auto &frame = frames_[frame_id];
+    page_id_t page_id_before = frame->page_id_;
+    if (frame->is_dirty_) {
+      FlushPage(page_id_before);
+    }
+    page_table_.erase(page_id_before);
+    page_table_[page_id] = frame_id;
+    frame->Reset();
+    frame->page_id_ = page_id;
+    read_page_from_disk(page_id, frame);
   }
+  // 收尾工作
   // attention: 此处应该让replacer_认为该frame不可替换
-  replacer_->SetEvictable(frame_id.value(), false);
-
-  return frame_id.value();
+  auto frame = frames_[frame_id];
+  frame->pin_count_.fetch_add(1);
+  replacer_->RecordAccess(frame_id);
+  replacer_->SetEvictable(frame_id, false);
+  return frame_id;
 }
 
 }  // namespace bustub
