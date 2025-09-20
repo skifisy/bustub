@@ -25,6 +25,9 @@
 
 #include <sys/time.h>
 
+/**
+ * @brief 获取当前时间
+ */
 auto ClockMs() -> uint64_t {
   struct timeval tm;
   gettimeofday(&tm, nullptr);
@@ -32,9 +35,9 @@ auto ClockMs() -> uint64_t {
 }
 
 struct BpmTotalMetrics {
-  uint64_t scan_cnt_{0};
-  uint64_t get_cnt_{0};
-  uint64_t start_time_{0};
+  uint64_t scan_cnt_{0};    // 扫描次数
+  uint64_t get_cnt_{0};     // 读取次数
+  uint64_t start_time_{0};  // 测试开始时间
   std::mutex mutex_;
 
   void Begin() { start_time_ = ClockMs(); }
@@ -63,12 +66,12 @@ struct BpmTotalMetrics {
 };
 
 struct BpmMetrics {
-  uint64_t start_time_{0};
-  uint64_t last_report_at_{0};
-  uint64_t last_cnt_{0};
-  uint64_t cnt_{0};
-  std::string reporter_;
-  uint64_t duration_ms_;
+  uint64_t start_time_{0};      // 测试开始时间
+  uint64_t last_report_at_{0};  // 上次报告时间
+  uint64_t last_cnt_{0};        // 上次计数
+  uint64_t cnt_{0};             // 总操作计数
+  std::string reporter_;        // 报告者标识（如"scan 1"）
+  uint64_t duration_ms_;        // 测试持续时间
 
   explicit BpmMetrics(std::string reporter, uint64_t duration_ms)
       : reporter_(std::move(reporter)), duration_ms_(duration_ms) {}
@@ -83,13 +86,16 @@ struct BpmMetrics {
     if (elsped - last_report_at_ > 1000) {
       fmt::print(stderr, "[{:5.2f}] {}: total_cnt={:<10} throughput={:<10.3f} avg_throughput={:<10.3f}\n",
                  elsped / 1000.0, reporter_, cnt_,
+                 // 瞬时吞吐量
                  (cnt_ - last_cnt_) / static_cast<double>(elsped - last_report_at_) * 1000,
+                 // 平均吞吐量
                  cnt_ / static_cast<double>(elsped) * 1000);
       last_report_at_ = elsped;
       last_cnt_ = cnt_;
     }
   }
 
+  // 检查是否发生超时
   auto ShouldFinish() -> bool {
     auto now = ClockMs();
     return now - start_time_ > duration_ms_;
@@ -97,7 +103,7 @@ struct BpmMetrics {
 };
 
 struct BusTubBenchPageHeader {
-  uint64_t seed_;
+  uint64_t seed_;  // 页面随机种子
   uint64_t page_id_;
   char data_[0];
 };
@@ -141,7 +147,14 @@ auto main(int argc, char **argv) -> int {
   using bustub::BufferPoolManager;
   using bustub::DiskManagerUnlimitedMemory;
   using bustub::page_id_t;
-
+  /**
+  * --duration：测试持续时间（默认 30 秒）。
+  * --latency：是否模拟磁盘延迟。
+  * --scan-thread-n/ --get-thread-n：扫描/读取线程数（默认 8）。
+  * --bpm-size：缓冲池大小（默认 64 页）。
+  * --db-size：数据库总页数（默认 6400 页）。
+  * --lru-k-size：LRU-K 替换算法的 K值（默认 16）。
+  */
   argparse::ArgumentParser program("bustub-bpm-bench");
   program.add_argument("--duration").help("run bpm bench for n milliseconds");
   program.add_argument("--latency").help("enable disk latency");
@@ -223,6 +236,7 @@ auto main(int argc, char **argv) -> int {
   std::vector<std::thread> threads;
   using ModifyRecord = std::unordered_map<page_id_t, uint64_t>;
 
+  // 扫描线程
   for (size_t thread_id = 0; thread_id < scan_thread_n; thread_id++) {
     threads.emplace_back([bustub_page_cnt, scan_thread_n, thread_id, &page_ids, &bpm, duration_ms, &total_metrics] {
       BpmMetrics metrics(fmt::format("scan {:>2}", thread_id), duration_ms);
@@ -250,6 +264,7 @@ auto main(int argc, char **argv) -> int {
     });
   }
 
+  // 写线程
   for (size_t thread_id = 0; thread_id < get_thread_n; thread_id++) {
     threads.emplace_back([thread_id, &page_ids, &bpm, bustub_page_cnt, get_thread_n, duration_ms, &total_metrics] {
       std::random_device r;

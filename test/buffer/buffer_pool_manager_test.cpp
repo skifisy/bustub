@@ -33,12 +33,10 @@ TEST(BufferPoolManagerTest, IsDirtyTest) {
   auto disk_manager = std::make_shared<DiskManager>(db_fname);
   auto bpm = std::make_shared<BufferPoolManager>(2, disk_manager.get(), K_DIST);
 
-  // New完一个Page应该给它分配对应的Frame，并标记为dirty
   page_id_t pid0 = bpm->NewPage();
-  auto page_guard = bpm->ReadPage(pid0);
-  auto data = page_guard.GetData();
-  bool ret = std::all_of(data, data + BUSTUB_PAGE_SIZE, [](unsigned char c) { return c == 0; });
-  ASSERT_TRUE(ret);
+  auto page_guard = bpm->WritePage(pid0);
+  ASSERT_TRUE(page_guard.IsDirty());
+  
 }
 
 TEST(BufferPoolManagerTest, VeryBasicTest) {

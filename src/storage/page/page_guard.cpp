@@ -15,6 +15,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <utility>
+#include "common/macros.h"
 #include "storage/disk/disk_scheduler.h"
 
 namespace bustub {
@@ -182,8 +183,10 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
   // 2. replacer记录次数
   replacer_->RecordAccess(frame_->frame_id_);
   // 可能frame先进了replacer_中，出来一次，又进去一次
-  replacer_->SetEvictable(frame_->frame_id_, false);
+  // replacer_->SetEvictable(frame_->frame_id_, false);
   frame_->rwlatch_.lock();
+  frame_->is_dirty_ = true;
+  BUSTUB_ASSERT(frame_->page_id_ == page_id, "page_id mismatch");
 }
 
 /**
@@ -292,9 +295,6 @@ void WritePageGuard::Drop() {
   if (!is_valid_) {
     return;
   }
-  // write-through，如果是赃页，直接写入磁盘
-  // TODO(question) 如何知道一个page是否为脏页
-  frame_->is_dirty_ = true;
   frame_->rwlatch_.unlock();
   // 先unlock再decrement，防止latch失效
   if (--frame_->pin_count_ == 0) {

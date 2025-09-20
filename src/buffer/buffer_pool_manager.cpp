@@ -137,15 +137,11 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
  * @return The page ID of the newly allocated page.
  */
 auto BufferPoolManager::NewPage() -> page_id_t {
-  std::unique_lock<std::mutex> lock(*bpm_latch_);
   // 通过increaseDiskSpace来确保在磁盘上有足够的空间
-  page_id_t page_size = next_page_id_ + 1;
-  page_id_t page_id = next_page_id_;
-  ++next_page_id_;
-  disk_scheduler_->IncreaseDiskSpace(page_size);
+  page_id_t page_id = next_page_id_++;
+  disk_scheduler_->IncreaseDiskSpace(page_id + 1);
   // TODO(question): 问题，申请一个page的时候，是否需要给它提供一个内存页，也就是frame？
-  lock.unlock();
-  AllocateFrame(page_id, false);
+  // AllocateFrame(page_id, false);
   return page_id;
 }
 
@@ -361,7 +357,7 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
   disk_scheduler_->Schedule(std::move(r));
   bool ret = fut.get();
   BUSTUB_ASSERT(ret == true, "flush error!");
-  frame->is_dirty_ = false;
+  // frame->is_dirty_ = false; // todo：是否要更改is_dirty_状态?
   return true;
 }
 
@@ -390,11 +386,11 @@ void BufferPoolManager::FlushAllPages() {
     future_vec.emplace_back(frame, r.callback_.get_future());
     disk_scheduler_->Schedule(std::move(r));
   }
-  for (auto &pair : future_vec) {
-    pair.second.get();
-    auto &frame = pair.first;
-    frame->is_dirty_ = false;
-  }
+  // for (auto &pair : future_vec) {
+  //   pair.second.get();
+  //   auto &frame = pair.first;
+  //   frame->is_dirty_ = false;
+  // }
 }
 
 /**
@@ -482,6 +478,8 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id, bool read_from_disk) ->
   } else {
     frame->is_dirty_ = true;
   }
+  // attention: 此处应该让replacer_认为该frame不可替换
+  replacer_->SetEvictable(frame_id.value(), false);
 
   return frame_id.value();
 }
