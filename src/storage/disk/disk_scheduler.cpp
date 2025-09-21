@@ -12,6 +12,7 @@
 
 #include "storage/disk/disk_scheduler.h"
 #include <optional>
+#include "common/config.h"
 #include "common/exception.h"
 #include "common/macros.h"
 #include "storage/disk/disk_manager.h"
@@ -39,8 +40,9 @@ DiskScheduler::~DiskScheduler() {
 }
 
 void DiskScheduler::Schedule(DiskRequest r) {
-  BUSTUB_ASSERT(r.page_id_ >= 0, "page_id should be non-negative");
-  request_queues_[r.page_id_ % thread_num_].Put(std::move(r));
+  page_id_t pid = r.page_id_;
+  BUSTUB_ASSERT(pid >= 0, "page_id should be non-negative");
+  request_queues_[pid % thread_num_].Put(std::move(r));
 }
 
 void DiskScheduler::StartWorkerThread(int thread_id) {
