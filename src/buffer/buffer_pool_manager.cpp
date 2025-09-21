@@ -58,6 +58,7 @@ void FrameHeader::Reset() {
   pin_count_.store(0);
   is_dirty_ = false;
   page_id_ = 0;
+  io_future_ = std::future<bool>();
 }
 
 /**
@@ -428,10 +429,11 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
   std::lock_guard<std::mutex> lock(*bpm_latch_);
   auto read_page_from_disk = [this](page_id_t page_id, std::shared_ptr<FrameHeader> &frame) {
     DiskRequest r = {false, frame->GetDataMut(), page_id, {}};
-    auto future = r.callback_.get_future();
+    frame->io_future_ = r.callback_.get_future().share();
+    // auto future = r.callback_.get_future();
     disk_scheduler_->Schedule(std::move(r));
-    bool ret = future.get();  // 阻塞等待磁盘读取
-    BUSTUB_ASSERT(ret, true);
+    // bool ret = future.get();  // 阻塞等待磁盘读取
+    // BUSTUB_ASSERT(ret, true);
   };
 
   frame_id_t frame_id = -1;

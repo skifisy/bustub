@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <future>
 #include <list>
 #include <memory>
 #include <optional>
@@ -90,6 +91,9 @@ class FrameHeader {
   std::vector<char> data_;
 
   page_id_t page_id_;  // 该frame属于哪个page
+
+  std::shared_future<bool> io_future_;  // 当前frame是否有IO操作在进行（是否正在从磁盘读入数据）
+
   /**
    * TODO(P1): You may add any fields or helper functions under here that you think are necessary.
    *

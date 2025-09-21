@@ -38,6 +38,8 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
+  bool is_io_finished = frame_->io_future_.get();  // 等待IO完成
+  BUSTUB_ASSERT(is_io_finished, "IO failed");
   frame_->rwlatch_.lock_shared();
 }
 
@@ -170,6 +172,8 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
+  bool is_io_finished = frame_->io_future_.get();  // 等待IO完成
+  BUSTUB_ASSERT(is_io_finished, "IO failed");
   frame_->rwlatch_.lock();
   frame_->is_dirty_ = true;
   BUSTUB_ASSERT(frame_->page_id_ == page_id, "page_id mismatch");
