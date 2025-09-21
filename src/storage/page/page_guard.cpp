@@ -137,8 +137,8 @@ void ReadPageGuard::Drop() {
     return;
   }
   is_valid_ = false;
-  std::lock_guard<std::mutex> lock(*bpm_latch_);
   frame_->rwlatch_.unlock_shared();
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
   if (--frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
@@ -282,9 +282,8 @@ void WritePageGuard::Drop() {
     return;
   }
   is_valid_ = false;
-  std::lock_guard<std::mutex> lock(*bpm_latch_);
   frame_->rwlatch_.unlock();
-  // 先unlock再decrement，防止latch失效
+  std::lock_guard<std::mutex> lock(*bpm_latch_);
   if (--frame_->pin_count_ == 0) {
     replacer_->SetEvictable(frame_->frame_id_, true);
   }
