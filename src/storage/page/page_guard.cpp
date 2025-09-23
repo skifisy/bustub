@@ -171,7 +171,7 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
   frame_->rwlatch_.lock();
-  frame_->is_dirty_ = true;
+  frame_->is_dirty_ = true;  // TODO(bug) dirty标记应该设置为atomic
   BUSTUB_ASSERT(frame_->page_id_ == page_id, "page_id mismatch");
 }
 
