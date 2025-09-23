@@ -460,7 +460,9 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     }
     page_table_.erase(page_id_before);
     page_table_[page_id] = frame_id;
-    frame->Reset();
+    // frame->Reset();
+    frame->pin_count_.store(0);
+    frame->is_dirty_ = false;
     frame->page_id_ = page_id;
     read_page_from_disk(page_id, frame);
   }

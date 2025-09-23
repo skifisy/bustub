@@ -51,7 +51,7 @@ struct DiskRequest {
  */
 class DiskScheduler {
  public:
-  explicit DiskScheduler(DiskManager *disk_manager, int thread_num = 64);
+  explicit DiskScheduler(DiskManager *disk_manager, int thread_num = 1);
   ~DiskScheduler();
 
   /**
