@@ -41,4 +41,6 @@ void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
  */
 auto BPlusTreePage::GetMinSize() const -> int { return max_size_ / 2; }
 
+auto BPlusTreePage::IsFull() const -> bool { return size_ >= max_size_; }
+
 }  // namespace bustub

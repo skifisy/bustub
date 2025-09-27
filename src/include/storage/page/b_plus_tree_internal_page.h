@@ -80,6 +80,25 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto ValueAt(int index) const -> ValueType;
 
   /**
+   * @param index The index of the key to set.
+   * @param key The new value for Value
+   */
+  void SetValueAt(int index, const ValueType &value);
+
+  /**
+   * @brief 插入一个key, value (有序)
+   * @return true: 成功插入; false: 节点已满，插入失败
+   */
+  auto InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator) -> bool;
+
+  /**
+   * @brief 插入数据key，value；this中key数量剩到min_size；other接收剩余的key
+   * （next_page_id的链接由上层完成）
+   */
+  void SplitInternalPage(BPlusTreeInternalPage &other, const KeyType &key, const ValueType &value,
+                         KeyComparator &comparator);
+
+  /**
    * @brief For test only, return a string representing all keys in
    * this internal page, formatted as "(key1,key2,key3,...)"
    *

@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "execution/expressions/comparison_expression.h"
 #include "storage/page/b_plus_tree_page.h"
 
 namespace bustub {
@@ -65,6 +66,18 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void SetNextPageId(page_id_t next_page_id);
   auto KeyAt(int index) const -> KeyType;
   auto ValueAt(int index) const -> ValueType;
+
+  /**
+   * @brief 插入一个key, value (有序)
+   * @return true: 成功插入; false: 节点已满，插入失败
+   */
+  auto InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator) -> bool;
+
+  /**
+   * @brief 插入数据key，value；this中key数量剩到min_size；other接收剩余的key
+   * （next_page_id的链接由上层完成）
+   */
+  void SplitLeafPage(BPlusTreeLeafPage &other, const KeyType &key, const ValueType &value, KeyComparator &comparator);
 
   /**
    * @brief For test only return a string representing all keys in
