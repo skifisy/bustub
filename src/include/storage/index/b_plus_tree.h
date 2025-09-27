@@ -128,6 +128,7 @@ class BPlusTree {
   void BatchOpsFromFile(const std::filesystem::path &file_name);
 
  private:
+  auto LeafSearch(const KeyType &key, Context& ctx, bool is_read) -> ReadPageGuard;
   /* Debug Routines for FREE!! */
   void ToGraph(page_id_t page_id, const BPlusTreePage *page, std::ofstream &out);
 

@@ -57,7 +57,7 @@ void FrameHeader::Reset() {
   std::fill(data_.begin(), data_.end(), 0);
   pin_count_.store(0);
   is_dirty_ = false;
-  page_id_ = 0;
+  page_id_ = INVALID_PAGE_ID;
 }
 
 /**
@@ -140,7 +140,6 @@ auto BufferPoolManager::NewPage() -> page_id_t {
   // 通过increaseDiskSpace来确保在磁盘上有足够的空间
   page_id_t page_id = next_page_id_++;
   disk_scheduler_->IncreaseDiskSpace(page_id + 1);
-  // TODO(question): 问题，申请一个page的时候，是否需要给它提供一个内存页，也就是frame？
   return page_id;
 }
 

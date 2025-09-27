@@ -66,12 +66,14 @@ TEST(BPlusTreeTests, DISABLED_InsertTest1NoIterator) {
   // allocate header_page
   page_id_t page_id = bpm->NewPage();
   // create b+ tree
+  // 叶子节点2， 中间节点3
   BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 3);
   GenericKey<8> index_key;
   RID rid;
 
   std::vector<int64_t> keys = {1, 2, 3, 4, 5};
   for (auto key : keys) {
+    // slot_num 为低32位，page_id 为高32位 = 0
     int64_t value = key & 0xFFFFFFFF;
     rid.Set(static_cast<int32_t>(key >> 32), value);
     index_key.SetFromInteger(key);
