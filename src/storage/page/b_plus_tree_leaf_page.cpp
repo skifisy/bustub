@@ -60,6 +60,21 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   return rid_array_[index];
 }
 INDEX_TEMPLATE_ARGUMENTS
+
+void B_PLUS_TREE_LEAF_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
+  BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
+  BUSTUB_ASSERT(index < GetSize(), "index overflow");
+  key_array_[index] = key;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
+  BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
+  BUSTUB_ASSERT(index < GetSize(), "index overflow");
+  rid_array_[index] = value;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator)
     -> bool {
   if (IsFull()) {
@@ -94,42 +109,43 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SplitLeafPage(BPlusTreeLeafPage &other,  //
   BUSTUB_ENSURE(other.IsLeafPage(), "other is not leaf page");
   BUSTUB_ASSERT(IsFull(), "this is not full");
   BUSTUB_ASSERT(other.GetSize() == 0, "other is not empty");
-  const int this_size = GetMinSize();
   const int max_size = GetMaxSize();
-  const int other_size = (GetMaxSize() + 1) / 2;
+  const int this_size = (max_size + 1) / 2;
+  const int other_size = (max_size + 2) / 2;
   SetSize(this_size);
   other.SetSize(other_size);
 
-  int right = other_size;
-  int left = max_size;
+  int right = other_size - 1;
+  int left = max_size - 1;
   // 1. 先将this移动至other
-  for (; right >= 1 && comparator(key_array_[left], key) > 0; --right, --left) {
+  for (; right >= 0 && comparator(key_array_[left], key) > 0; --right, --left) {
     other.key_array_[right] = key_array_[left];
     other.rid_array_[right] = rid_array_[left];
   }
   // 2. 如果right未放满，说明key找到位置
-  if (right >= 1) {
+  if (right >= 0) {
     other.key_array_[right] = key;
     other.rid_array_[right] = value;
     --right;
-    for (; right >= 1; --right, --left) {
+    for (; right >= 0; --right, --left) {
       other.key_array_[right] = key_array_[left];
       other.rid_array_[right] = rid_array_[left];
     }
   }
-  BUSTUB_ASSERT(right == 0, "right is not zero");
+  BUSTUB_ASSERT(right == -1, "right is not -1");
   // 3. key找到位置，可以直接返回
   if (comparator(other.key_array_[0], key) <= 0) {
-    BUSTUB_ASSERT(left == this_size, "left is not equal to this_size");
+    BUSTUB_ASSERT(left == this_size - 1, "left is not equal to this_size-1");
     return;
   }
+  BUSTUB_ASSERT(left == this_size, "left is not equal to this_size");
   // 4. 否则this继续寻找key的位置
-  for (; left >= 1 && comparator(key_array_[left], key) > 0; --left) {
+  for (; left >= 0 && comparator(key_array_[left], key) > 0; --left) {
     key_array_[left + 1] = key_array_[left];
     rid_array_[left + 1] = rid_array_[left];
   }
-  key_array_[left] = key;
-  rid_array_[left] = value;
+  key_array_[left + 1] = key;
+  rid_array_[left + 1] = value;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;

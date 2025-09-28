@@ -316,6 +316,7 @@ auto BufferPoolManager::WritePage(page_id_t page_id, AccessType access_type) -> 
  * @return ReadPageGuard A page guard ensuring shared and read-only access to a page's data.
  */
 auto BufferPoolManager::ReadPage(page_id_t page_id, AccessType access_type) -> ReadPageGuard {
+  BUSTUB_ASSERT(page_id != INVALID_PAGE_ID, "page_id should be non-negative");
   auto guard_opt = CheckedReadPage(page_id, access_type);
 
   if (!guard_opt.has_value()) {

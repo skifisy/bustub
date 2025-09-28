@@ -38,8 +38,8 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool {
     return true;
   }
   ReadPageGuard guard1 = bpm_->ReadPage(root_page_id);
-  auto root_page = guard1.As<InternalPage>();
-  return root_page->GetSize() > 0;
+  auto root_page = guard1.As<BPlusTreePage>();
+  return root_page->GetSize() <= 0;
 }
 
 /*****************************************************************************
@@ -100,9 +100,9 @@ void BPLUSTREE_TYPE::LeafSearch(const KeyType &key, Context &ctx, bool is_read) 
   // root为内部节点，遍历key值，找到对应的孩子节点
   auto internal_page = reinterpret_cast<const InternalPage *>(root);
   int child_size = internal_page->GetSize();
-  page_id_t child_page_id = child_size;
+  page_id_t child_page_id = internal_page->ValueAt(child_size);
   // TODO(optimize) 二分查找
-  for (int i = 1; i < child_size; i++) {
+  for (int i = 1; i <= child_size; i++) {
     if (comparator_(key, internal_page->KeyAt(i)) < 0) {
       child_page_id = internal_page->ValueAt(i - 1);
     }
@@ -133,6 +133,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   ctx.header_page_ = bpm_->WritePage(header_page_id_);
   auto header = ctx.header_page_->AsMut<BPlusTreeHeaderPage>();
   auto root_id = header->root_page_id_;
+  ctx.root_page_id_ = root_id;
   // 2. 无root节点，创建root
   if (root_id == INVALID_PAGE_ID) {
     root_id = bpm_->NewPage();
@@ -143,9 +144,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
     auto root_page = bpm_->WritePage(root_id);
     auto root = root_page.AsMut<LeafPage>();
     root->Init(leaf_max_size_);
-    root->KeyAt(0) = key;
-    root->ValueAt(0) = value;
-    root->SetSize(1);
+    root->InsertKeyValue(key, value, comparator_);
     return true;
   }
   // 3. 获取root_page, 搜索leaf
@@ -170,14 +169,14 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
 
   // 3.2 再插入上层的中间节点（循环）
   // 3.2.1 获取向上提升的节点（new page的最左侧节点）
-  KeyType new_key = leaf->KeyAt(0);
+  KeyType new_key = new_leaf->KeyAt(0);
   page_id_t new_value = new_page_id;
 
   while (!ctx.write_set_.empty()) {
     WritePageGuard parent_guard = std::move(ctx.write_set_.back());
     ctx.write_set_.pop_back();
     auto parent = parent_guard.AsMut<InternalPage>();
-    BUSTUB_ASSERT(parent->IsLeafPage(), "parent should be internal page");
+    BUSTUB_ASSERT(!parent->IsLeafPage(), "parent should be internal page");
     // 3.2.2 内部节点非满，直接插入
     if (parent->InsertKeyValue(new_key, new_value, comparator_)) {
       return true;
@@ -187,8 +186,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
     auto new_internal_page = bpm_->WritePage(new_internal_id);
     auto new_internal = new_internal_page.AsMut<InternalPage>();
     new_internal->Init(internal_max_size_);
-    parent->SplitInternalPage(*new_internal, new_key, new_value, comparator_);
-    new_key = new_internal->KeyAt(0);
+    new_key = parent->SplitInternalPage(*new_internal, new_key, new_value, comparator_);
     new_value = new_internal_id;
   }
 
@@ -197,7 +195,8 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   auto new_root_page = bpm_->WritePage(new_root_id);
   auto new_root = new_root_page.AsMut<InternalPage>();
   new_root->Init(internal_max_size_);
-  new_root->SetKeyAt(0, new_key);
+  new_root->SetSize(1);
+  new_root->SetKeyAt(1, new_key);
   new_root->SetValueAt(0, ctx.root_page_id_);
   new_root->SetValueAt(1, new_value);
   header->root_page_id_ = new_root_id;

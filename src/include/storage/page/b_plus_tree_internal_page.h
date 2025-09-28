@@ -13,6 +13,7 @@
 #include <queue>
 #include <string>
 
+#include "common/config.h"
 #include "storage/page/b_plus_tree_page.h"
 
 namespace bustub {
@@ -94,9 +95,10 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   /**
    * @brief 插入数据key，value；this中key数量剩到min_size；other接收剩余的key
    * （next_page_id的链接由上层完成）
+   * @return 返回上传的key（也就是第max/2 + 1个节点）
    */
-  void SplitInternalPage(BPlusTreeInternalPage &other, const KeyType &key, const ValueType &value,
-                         KeyComparator &comparator);
+  auto SplitInternalPage(BPlusTreeInternalPage &other, const KeyType &key, const ValueType &value,
+                         KeyComparator &comparator) -> KeyType;
 
   /**
    * @brief For test only, return a string representing all keys in
@@ -109,7 +111,7 @@ class BPlusTreeInternalPage : public BPlusTreePage {
     bool first = true;
 
     // First key of internal page is always invalid
-    for (int i = 1; i < GetSize(); i++) {
+    for (int i = 1; i < GetSize() + 1; i++) {
       KeyType key = KeyAt(i);
       if (first) {
         first = false;
