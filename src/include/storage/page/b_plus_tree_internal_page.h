@@ -101,6 +101,12 @@ class BPlusTreeInternalPage : public BPlusTreePage {
                          KeyComparator &comparator) -> KeyType;
 
   /**
+   * @brief 寻找key所在的index
+   * @return position
+   */
+  auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) -> int;
+
+  /**
    * @brief For test only, return a string representing all keys in
    * this internal page, formatted as "(key1,key2,key3,...)"
    *

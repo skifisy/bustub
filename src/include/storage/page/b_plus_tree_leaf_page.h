@@ -82,6 +82,17 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void SplitLeafPage(BPlusTreeLeafPage &other, const KeyType &key, const ValueType &value, KeyComparator &comparator);
 
   /**
+   * @brief 删除一个key
+   * @return true: 成功删除；false: 节点数量少于一半，删除失败
+   */
+  auto DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_root) -> bool;
+
+  /**
+   * @brief 将other page combine到this page上
+   */
+  void CombinePage(BPlusTreeLeafPage &other);
+
+  /**
    * @brief For test only return a string representing all keys in
    * this leaf page formatted as "(key1,key2,key3,...)"
    *

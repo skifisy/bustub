@@ -153,6 +153,16 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
   return ret;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) -> int {
+  for (int i = 1; i < GetSize(); i++) {
+    if (comparator(key, KeyAt(i)) < 0) {
+      return i - 1;
+    }
+  }
+  return GetSize() - 1;
+}
+
 // valuetype for internalNode should be page id_t
 template class BPlusTreeInternalPage<GenericKey<4>, page_id_t, GenericComparator<4>>;
 template class BPlusTreeInternalPage<GenericKey<8>, page_id_t, GenericComparator<8>>;

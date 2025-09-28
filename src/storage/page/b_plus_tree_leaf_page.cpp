@@ -148,6 +148,48 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SplitLeafPage(BPlusTreeLeafPage &other,  //
   rid_array_[left + 1] = value;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_root) -> bool {
+  int min_size = (GetMaxSize() + 1) / 2;
+  if (!is_root && GetSize() <= min_size) {
+    return false;
+  }
+  // TODO(optimize) 优化为二分查找
+  // 1. 查找删除的key
+  int pos = -1;
+  for (int i = 0; i < GetSize(); i++) {
+    if (comparator(key_array_[i], key) == 0) {
+      pos = i;
+      break;
+    }
+  }
+
+  // 2. 找不到也返回true
+  if (pos == -1) {
+    return true;
+  }
+
+  // 3. 删除该key
+  for (int i = pos; i < GetSize(); i++) {
+    key_array_[i] = key_array_[i + 1];
+    rid_array_[i] = rid_array_[i + 1];
+  }
+  SetSize(GetSize() - 1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::CombinePage(BPlusTreeLeafPage &other) {
+  int this_size = GetSize();
+  int other_size = other.GetSize();
+  BUSTUB_ASSERT(this_size + other_size <= GetMaxSize(), "error");
+  for (int left = this_size, right = 0; right < other_size; right++) {
+    key_array_[left] = other.key_array_[right];
+  }
+  SetSize(this_size + other_size);
+  other.SetSize(0);
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;

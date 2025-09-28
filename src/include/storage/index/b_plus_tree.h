@@ -129,6 +129,13 @@ class BPlusTree {
 
  private:
   void LeafSearch(const KeyType &key, Context &ctx, bool is_read);
+  /**
+   * @brief 借一个node，或者直接与兄弟节点合并
+   * @return bool: true-借一个node, false-与兄弟节点合并
+   *         int: 合并时, parent需要删除的key_index
+   */
+  auto BorrowOrCombineWithSiblingPage(WritePageGuard &leaf_guard, InternalPage *parent, const KeyType &target_key,
+                                      KeyComparator &comparator, int key_index) -> std::pair<bool, int>;
   /* Debug Routines for FREE!! */
   void ToGraph(page_id_t page_id, const BPlusTreePage *page, std::ofstream &out);
 
