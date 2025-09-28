@@ -138,7 +138,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SplitLeafPage(BPlusTreeLeafPage &other,  //
     BUSTUB_ASSERT(left == this_size - 1, "left is not equal to this_size-1");
     return;
   }
-  BUSTUB_ASSERT(left == this_size, "left is not equal to this_size");
+  BUSTUB_ASSERT(left == this_size-2, "left is not equal to this_size-2");
   // 4. 否则this继续寻找key的位置
   for (; left >= 0 && comparator(key_array_[left], key) > 0; --left) {
     key_array_[left + 1] = key_array_[left];

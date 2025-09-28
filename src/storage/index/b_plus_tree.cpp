@@ -100,11 +100,12 @@ void BPLUSTREE_TYPE::LeafSearch(const KeyType &key, Context &ctx, bool is_read) 
   // root为内部节点，遍历key值，找到对应的孩子节点
   auto internal_page = reinterpret_cast<const InternalPage *>(root);
   int child_size = internal_page->GetSize();
-  page_id_t child_page_id = internal_page->ValueAt(child_size);
+  page_id_t child_page_id = internal_page->ValueAt(child_size - 1);
   // TODO(optimize) 二分查找
-  for (int i = 1; i <= child_size; i++) {
+  for (int i = 1; i < child_size; i++) {
     if (comparator_(key, internal_page->KeyAt(i)) < 0) {
       child_page_id = internal_page->ValueAt(i - 1);
+      break;
     }
   }
   if (is_read) {
@@ -195,7 +196,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   auto new_root_page = bpm_->WritePage(new_root_id);
   auto new_root = new_root_page.AsMut<InternalPage>();
   new_root->Init(internal_max_size_);
-  new_root->SetSize(1);
+  new_root->SetSize(2);
   new_root->SetKeyAt(1, new_key);
   new_root->SetValueAt(0, ctx.root_page_id_);
   new_root->SetValueAt(1, new_value);

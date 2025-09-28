@@ -118,6 +118,7 @@ TEST(BPlusTreeTests, InsertTest2) {
     rid.Set(static_cast<int32_t>(key >> 32), value);
     index_key.SetFromInteger(key);
     tree.Insert(index_key, rid);
+    std::cout << tree.DrawBPlusTree() << std::endl;
   }
 
   std::vector<RID> rids;
@@ -125,7 +126,7 @@ TEST(BPlusTreeTests, InsertTest2) {
     rids.clear();
     index_key.SetFromInteger(key);
     tree.GetValue(index_key, &rids);
-    EXPECT_EQ(rids.size(), 1);
+    ASSERT_EQ(rids.size(), 1);
 
     int64_t value = key & 0xFFFFFFFF;
     EXPECT_EQ(rids[0].GetSlotNum(), value);

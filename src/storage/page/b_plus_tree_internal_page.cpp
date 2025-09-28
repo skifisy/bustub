@@ -38,14 +38,14 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) {
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   BUSTUB_ASSERT(index > 0, "Index must be positive");
-  BUSTUB_ASSERT(index <= GetSize(), "Index out of bounds");
+  BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   return key_array_[index];
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
   BUSTUB_ASSERT(index > 0, "Index must be positive");
-  BUSTUB_ASSERT(index <= GetSize(), "Index out of bounds");
+  BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   key_array_[index] = key;
 }
 
@@ -56,14 +56,14 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   BUSTUB_ASSERT(index >= 0, "Index must be non-negative");
-  BUSTUB_ASSERT(index <= GetSize(), "Index out of bounds");
+  BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   return page_id_array_[index];
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
   BUSTUB_ASSERT(index >= 0, "Index must be non-negative");
-  BUSTUB_ASSERT(index <= GetSize(), "Index out of bounds");
+  BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   page_id_array_[index] = value;
 }
 
@@ -74,7 +74,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
     return false;
   }
   int pos = 1;
-  for (int i = 1; i <= GetSize(); i++) {
+  for (int i = 1; i < GetSize(); i++) {
     if (comparator(key_array_[i], key) < 0) {
       ++pos;
     } else {
@@ -82,10 +82,10 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
     }
   }
   // 移动
-  for (int i = GetSize(); i >= pos; --i) {
+  for (int i = GetSize() - 1; i >= pos; --i) {
     key_array_[i + 1] = key_array_[i];
     page_id_array_[i + 1] = page_id_array_[i];
-    BUSTUB_ASSERT(comparator(key_array_[i+1], key) > 0, "assertion false");
+    BUSTUB_ASSERT(comparator(key_array_[i + 1], key) > 0, "assertion false");
   }
   // 插入
   key_array_[pos] = key;
@@ -98,18 +98,18 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &other, const KeyType &key,
                                                        const ValueType &value, KeyComparator &comparator) -> KeyType {
-  BUSTUB_ENSURE(IsLeafPage(), "this is not leaf page");
-  BUSTUB_ENSURE(other.IsLeafPage(), "other is not leaf page");
+  BUSTUB_ASSERT(!IsLeafPage(), "this is not InternalPage");
+  BUSTUB_ASSERT(!other.IsLeafPage(), "other is not InternalPage");
   BUSTUB_ASSERT(IsFull(), "this is not full");
   BUSTUB_ASSERT(other.GetSize() == 0, "other is not empty");
-  const int this_size = GetMinSize();
   const int max_size = GetMaxSize();
-  const int other_size = (GetMaxSize() - 1) / 2;
+  const int this_size = (max_size - 1) / 2 + 1;
+  const int other_size = max_size / 2 + 1;
   SetSize(this_size);
   other.SetSize(other_size);
 
-  int right = other_size;
-  int left = max_size;
+  int right = other_size - 1;
+  int left = max_size - 1;
   // 1. 先将this移动至other
   for (; right >= 1 && comparator(key_array_[left], key) > 0; --right, --left) {
     other.key_array_[right] = key_array_[left];
@@ -129,7 +129,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
   // 3. key找到位置，可以直接返回
   // 3.1 如果left前面几个都填到right里面，并且key要比left都大
   // 说明key要向上传
-  if (left == this_size && comparator(key_array_[left], key) <= 0) {
+  if (left == this_size - 1 && comparator(key_array_[left], key) <= 0) {
     // 更新other的首个指针
     other.page_id_array_[0] = value;
     return key;
@@ -137,14 +137,14 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
 
   auto ret = key_array_[left];
   other.page_id_array_[0] = page_id_array_[left];
-  // 3.2 如果key已经填在right里面了
-  if (left == this_size + 1) {
+  // 3.2 如果key已经填在right里面了，说明left的最右边的值要上传
+  if (left == this_size) {
     BUSTUB_ASSERT(comparator(key_array_[left], key) <= 0, "error");
     return ret;
   }
   --left;
   // 4. 否则this继续寻找key的位置
-  for (; left >= 1 && comparator(key_array_[left], key) > 0; --left) {
+  for (; left >= 0 && comparator(key_array_[left], key) > 0; --left) {
     key_array_[left + 1] = key_array_[left];
     page_id_array_[left + 1] = page_id_array_[left];
   }
