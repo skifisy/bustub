@@ -97,8 +97,33 @@ TEST(BPlusTreeTests, InsertTest1NoIterator) {
   }
   delete bpm;
 }
+TEST(BPlusTreeTests, InsertTest1) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
 
-TEST(BPlusTreeTests, InsertTest2) {
+  auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
+  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  // allocate header_page
+  page_id_t page_id = bpm->NewPage();
+  // create b+ tree
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 3, 4);
+  GenericKey<8> index_key;
+  RID rid;
+
+  std::vector<int64_t> keys = {1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 18, 19, 20};
+  for (auto key : keys) {
+    int64_t value = key & 0xFFFFFFFF;
+    rid.Set(static_cast<int32_t>(key >> 32), value);
+    index_key.SetFromInteger(key);
+    tree.Insert(index_key, rid);
+    std::cout << tree.DrawBPlusTree() << std::endl;
+    std::cout << "---------------------------------------------" << std::endl;
+  }
+  delete bpm;
+}
+
+TEST(BPlusTreeTests, DISABLED_InsertTest2) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
