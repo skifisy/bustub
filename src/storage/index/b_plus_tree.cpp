@@ -1,5 +1,6 @@
 #include "storage/index/b_plus_tree.h"
 #include <cstddef>
+#include <tuple>
 #include "common/config.h"
 #include "common/macros.h"
 #include "storage/index/b_plus_tree_debug.h"
@@ -249,23 +250,51 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   BUSTUB_ASSERT(!parent->IsLeafPage(), "error");
   auto leaf_key = leaf->KeyAt(0);
   int key_index = parent->SearchKeyIndex(leaf_key, comparator_);
-  auto sibling_ret = BorrowOrCombineWithSiblingPage(leaf_guard, parent, key, comparator_, key_index);
+  auto sibling_ret = BorrowOrCombineWithSiblingLeafPage(leaf_guard, parent, key, comparator_, key_index);
   if (sibling_ret.first) {
     return;
   }
 
   // 5. 删除父节点的key-value
   int index_tobe_deleted = sibling_ret.second;
-
-  // 5.1 大于一半，直接删除
-  // 5.2 借条目，合并节点
-  // 合并到根节点，降低树高
+  WritePageGuard cur_page_guard;
+  // 根据路径，循环删除
+  while (!ctx.write_set_.empty()) {
+    cur_page_guard = std::move(parent_guard);
+    auto cur_page = cur_page_guard.AsMut<InternalPage>();
+    parent_guard = std::move(ctx.write_set_.back());
+    parent = parent_guard.AsMut<InternalPage>();
+    ctx.write_set_.pop_back();
+    // 5.1 大于一半，直接删除
+    if (cur_page->DeleteKeyByIndex(index_tobe_deleted)) {
+      return;
+    }
+    // 5.2 借条目，合并节点
+    auto [is_borrow, key_index, key] = BorrowOrCombineWithSiblingInternalPage(cur_page_guard, parent, comparator_);
+    // 处理parent节点
+    if(is_borrow) {
+      // 更新parent的key值
+      parent->SetKeyAt(key_index, key);
+    } else {
+      // 删除parent中的key值
+      parent->DeleteKeyByIndex(key_index);
+    }
+  }
+  // 6. 合并到根节点，降低树高
+  if(parent->GetSize() <= 1) {
+    // size减少为0，那么该节点肯定为根节点，删除节点，更新根节点
+    BUSTUB_ASSERT(parent_guard.GetPageId()==root_id, "error");
+    header->root_page_id_ = parent->ValueAt(0);
+    page_id_t parent_id = parent_guard.GetPageId();
+    parent_guard.Drop();
+    bpm_->DeletePage(parent_id);
+  }
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingPage(WritePageGuard &leaf_guard, InternalPage *parent,
-                                                    const KeyType &target_key, KeyComparator &comparator, int key_index)
-    -> std::pair<bool, int> {
+auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_guard, InternalPage *parent,
+                                                        const KeyType &target_key, KeyComparator &comparator,
+                                                        int key_index) -> std::pair<bool, int> {
   auto leaf = leaf_guard.AsMut<LeafPage>();
   BUSTUB_ASSERT(leaf->IsLeafPage(), "error");
   BUSTUB_ASSERT(!parent->IsLeafPage(), "error");
@@ -330,6 +359,71 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingPage(WritePageGuard &leaf_guard, 
   bpm_->DeletePage(leaf_page_id);
   // 2.2.3 删除上级key
   return {false, key_index};
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_internal_guard, InternalPage *parent,
+                                                            KeyComparator &comparator)
+    -> std::tuple<bool, int, KeyType> {
+  auto cur_internal = cur_internal_guard.AsMut<InternalPage>();
+  // 1. 寻找在父节点的index
+  int key_index = parent->SearchKeyIndex(cur_internal->KeyAt(0), comparator);
+  // 2. 向右节点借用或合并
+  int parent_size = parent->GetSize();
+  if (key_index < parent_size - 1) {
+    // 右节点
+    auto right_page_id = parent->ValueAt(key_index + 1);
+    auto right_page_guard = bpm_->WritePage(right_page_id);
+    auto right_page = right_page_guard.template AsMut<InternalPage>();
+    // 2.1 判断，尝试借用节点
+    int cur_size = cur_internal->GetSize();
+    int right_size = right_page->GetSize();
+    if (right_size - 1 > (right_page->GetMaxSize() + 1) / 2) {
+      // 2.1.1 从右节点借用一个
+      BUSTUB_ASSERT(right_size > 0, "error");
+      cur_internal->SetSize(cur_size + 1);
+      cur_internal->SetKeyAt(cur_size, right_page->KeyAt(0));
+      cur_internal->SetValueAt(cur_size, right_page->ValueAt(0));
+      // 2.1.2 右节点删除借用的节点
+      right_page->DeleteKeyByIndex(0);
+      // 2.1.3 返回父节点要调整的key_index，key_value
+      return {true, key_index + 1, right_page->KeyAt(0)};
+    }
+    // 2.2 否则，合并右节点
+    // 2.2.1 先保存要删除的key
+    KeyType key_tobe_delete = right_page->KeyAt(0);
+    // 2.2.2 合并节点
+    cur_internal->CombinePage(*right_page);
+    // 2.2.3 删除right_page
+    bpm_->DeletePage(right_page_id);
+    return {false, key_index + 1, key_tobe_delete};
+  }
+  // 3. 向左节点借用/合并
+  BUSTUB_ASSERT(key_index - 1 >= 0, "error");
+  auto left_page_id = parent->ValueAt(key_index - 1);
+  auto left_page_guard = bpm_->WritePage(left_page_id);
+  auto left_page = left_page_guard.template AsMut<InternalPage>();
+
+  // 3.1 尝试借用节点
+  int left_size = left_page->GetSize();
+  if (left_size - 1 > (left_page->GetMaxSize() + 1) / 2) {
+    // 3.1.1 从左节点借用一个
+    BUSTUB_ASSERT(left_size > 0, "error");
+    KeyType k = left_page->KeyAt(left_size - 1);
+    page_id_t id = left_page->ValueAt(left_size - 1);
+    cur_internal->InsertKeyValueByIndex(k, id, 0, comparator_);
+    left_page->SetSize(left_size - 1);
+    // 3.1.2 更新上层的key
+    return {true, key_index, k};
+  }
+  // 3.2 合并到左侧节点
+  // 3.2.1 保存要删除的key
+  KeyType key_tobe_delete = cur_internal->KeyAt(0);
+  // 3.2.2 合并节点
+  left_page->CombinePage(*cur_internal);
+  // 3.2.3 删除cur_page
+  bpm_->DeletePage(cur_internal_guard.GetPageId());
+  return {false, key_index, key_tobe_delete};
 }
 
 /*****************************************************************************

@@ -37,14 +37,15 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
-  BUSTUB_ASSERT(index > 0, "Index must be positive");
+  // 无效key的作用：存储最左指针指向block的最小key
+  BUSTUB_ASSERT(index >= 0, "Index must be positive");
   BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   return key_array_[index];
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  BUSTUB_ASSERT(index > 0, "Index must be positive");
+  BUSTUB_ASSERT(index >= 0, "Index must be positive");
   BUSTUB_ASSERT(index < GetSize(), "Index out of bounds");
   key_array_[index] = key;
 }
@@ -81,6 +82,14 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
       break;
     }
   }
+  InsertKeyValueByIndex(key, value, pos, comparator);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValueByIndex(const KeyType &key, const ValueType &value, int pos,
+                                                           KeyComparator &comparator) {
+  BUSTUB_ASSERT(!IsFull(), "page is full");
   // 移动
   for (int i = GetSize() - 1; i >= pos; --i) {
     key_array_[i + 1] = key_array_[i];
@@ -92,7 +101,6 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
   page_id_array_[pos] = value;
   // 更新大小
   SetSize(GetSize() + 1);
-  return true;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -131,11 +139,13 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
   // 说明key要向上传
   if (left == this_size - 1 && comparator(key_array_[left], key) <= 0) {
     // 更新other的首个指针
+    other.key_array_[0] = key;
     other.page_id_array_[0] = value;
     return key;
   }
 
   auto ret = key_array_[left];
+  other.key_array_[0] = ret;
   other.page_id_array_[0] = page_id_array_[left];
   // 3.2 如果key已经填在right里面了，说明left的最右边的值要上传
   if (left == this_size) {
@@ -161,6 +171,52 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyCompa
     }
   }
   return GetSize() - 1;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_force) -> bool {
+  // 只有当前数量大于一半，才能删除
+  if (GetSize() <= (GetMaxSize() + 1) / 2 && !is_force) {
+    return false;
+  }
+  int pos = SearchKeyIndex(key, comparator);
+  // pos不可能等于0，因为向左合并
+  BUSTUB_ASSERT(pos > 0, "error");
+  BUSTUB_ASSERT(pos < GetSize(), "error");
+  for (int i = pos; i < GetSize() - 1; i++) {
+    key_array_[i] = key_array_[i + 1];
+    page_id_array_[i] = page_id_array_[i + 1];
+  }
+  SetSize(GetSize() - 1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKeyByIndex(int key_index) -> bool {
+  // 当前数量大于一半，可以直接删除，无需调整
+  bool ret = GetSize() > (GetMaxSize() + 1) / 2;
+
+  BUSTUB_ASSERT(key_index > 0, "error");
+  BUSTUB_ASSERT(key_index < GetSize(), "error");
+
+  for (int i = key_index; i < GetSize() - 1; i++) {
+    key_array_[i] = key_array_[i + 1];
+    page_id_array_[i] = page_id_array_[i + 1];
+  }
+  SetSize(GetSize() - 1);
+  return ret;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CombinePage(BPlusTreeInternalPage &other) {
+  int left = GetSize();
+  int right = 0;
+  for (; right < other.GetSize(); right++, left++) {
+    key_array_[left] = key_array_[right];
+    page_id_array_[left] = page_id_array_[right];
+  }
+  SetSize(right);
+  other.SetSize(0);
 }
 
 // valuetype for internalNode should be page id_t

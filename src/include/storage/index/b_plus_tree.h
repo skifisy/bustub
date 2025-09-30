@@ -134,8 +134,15 @@ class BPlusTree {
    * @return bool: true-借一个node, false-与兄弟节点合并
    *         int: 合并时, parent需要删除的key_index
    */
-  auto BorrowOrCombineWithSiblingPage(WritePageGuard &leaf_guard, InternalPage *parent, const KeyType &target_key,
-                                      KeyComparator &comparator, int key_index) -> std::pair<bool, int>;
+  auto BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_guard, InternalPage *parent, const KeyType &target_key,
+                                          KeyComparator &comparator, int key_index) -> std::pair<bool, int>;
+
+  /**
+   * @brief 借一个node，或者直接与兄弟节点合并
+   * @return bool: 借一个or合并；parent要修改/删除的key_index；KeyType: 修改的key值/删除的key值
+   */
+  auto  BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_internal_guard, InternalPage *parent,
+                                                            KeyComparator &comparator)-> std::tuple<bool, int, KeyType>;
   /* Debug Routines for FREE!! */
   void ToGraph(page_id_t page_id, const BPlusTreePage *page, std::ofstream &out);
 

@@ -93,6 +93,11 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator) -> bool;
 
   /**
+   * @brief 在index的位置上插入一个key, value
+   */
+  void InsertKeyValueByIndex(const KeyType &key, const ValueType &value, int pos, KeyComparator &comparator);
+
+  /**
    * @brief 插入数据key，value；this中key数量剩到min_size；other接收剩余的key
    * （next_page_id的链接由上层完成）
    * @return 返回上传的key（也就是第max/2 + 1个节点）
@@ -105,6 +110,19 @@ class BPlusTreeInternalPage : public BPlusTreePage {
    * @return position
    */
   auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) -> int;
+
+  /**
+   * @brief 大于一半，直接删除
+   * @return 删除是否成功
+   */
+  auto DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_force) -> bool;
+
+  /**
+   * @brief 根据key的index删除，大于一半则删除
+   */
+  auto DeleteKeyByIndex(int key_index) -> bool;
+
+  void CombinePage(BPlusTreeInternalPage &other);
 
   /**
    * @brief For test only, return a string representing all keys in
