@@ -173,7 +173,7 @@ TEST(BPlusTreeTests, InsertTest3) {
   delete bpm;
 }
 
-TEST(BPlusTreeTests, DISABLED_InsertTest2) {
+TEST(BPlusTreeTests, InsertTest2) {
   // create KeyComparator and index schema
   auto key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema.get());
@@ -212,12 +212,12 @@ TEST(BPlusTreeTests, DISABLED_InsertTest2) {
   for (auto iter = tree.Begin(); iter != tree.End(); ++iter) {
     auto pair = *iter;
     auto location = pair.second;
-    EXPECT_EQ(location.GetPageId(), 0);
-    EXPECT_EQ(location.GetSlotNum(), current_key);
+    ASSERT_EQ(location.GetPageId(), 0);
+    ASSERT_EQ(location.GetSlotNum(), current_key);
     current_key = current_key + 1;
   }
 
-  EXPECT_EQ(current_key, keys.size() + 1);
+  ASSERT_EQ(current_key, keys.size() + 1);
 
   start_key = 3;
   current_key = start_key;

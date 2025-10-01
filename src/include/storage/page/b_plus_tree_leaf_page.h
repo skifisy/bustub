@@ -68,6 +68,8 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto ValueAt(int index) const -> ValueType;
   void SetKeyAt(int index, const KeyType &key);
   void SetValueAt(int index, const ValueType &value);
+  auto KeyAtRef(int index) -> KeyType &;
+  auto ValueAtRef(int index) -> ValueType &;
 
   /**
    * @brief 插入一个key, value (有序)
@@ -93,6 +95,12 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void CombinePage(BPlusTreeLeafPage &other);
 
   /**
+   * @brief 查找第一个大于等于key的位置
+   * @return 返回index，找不到则返回-1
+   */
+  auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int;
+
+  /**
    * @brief For test only return a string representing all keys in
    * this leaf page formatted as "(key1,key2,key3,...)"
    *
@@ -113,7 +121,8 @@ class BPlusTreeLeafPage : public BPlusTreePage {
       kstr.append(std::to_string(key.ToString()));
     }
     kstr.append(")");
-
+    kstr.append(":");
+    kstr.append(std::to_string(GetNextPageId()));
     return kstr;
   }
 

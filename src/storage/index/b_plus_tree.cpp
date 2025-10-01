@@ -450,7 +450,25 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  ReadPageGuard header_guard = bpm_->ReadPage(header_page_id_);
+  auto header = header_guard.As<BPlusTreeHeaderPage>();
+  if (header->root_page_id_ != INVALID_PAGE_ID) {
+    // todo: 不能用read_page吗？
+    // 找到最左叶子节点
+    page_id_t cur_page_id = header->root_page_id_;
+
+    WritePageGuard guard = bpm_->WritePage(cur_page_id);
+    auto page = guard.As<BPlusTreePage>();
+    while (!page->IsLeafPage()) {
+      auto internal_page = guard.As<InternalPage>();
+      guard = bpm_->WritePage(internal_page->ValueAt(0));
+      page = guard.As<BPlusTreePage>();
+    }
+    return INDEXITERATOR_TYPE(std::move(guard), 0, bpm_);
+  }
+  return INDEXITERATOR_TYPE();
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -458,7 +476,19 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  Context ctx;
+  LeafSearch(key, ctx, true);
+  ReadPageGuard guard = std::move(ctx.read_set_.back());
+  auto leaf = guard.As<LeafPage>();
+  BUSTUB_ASSERT(leaf->IsLeafPage(), "error");
+  int pos = leaf->SearchKeyIndex(key, comparator_);
+  if (pos == -1) {
+    return INDEXITERATOR_TYPE();
+  }
+  page_id_t pid = guard.GetPageId();
+  return INDEXITERATOR_TYPE(bpm_->WritePage(pid), pos, bpm_);
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end

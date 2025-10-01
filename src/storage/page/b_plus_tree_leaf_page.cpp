@@ -53,14 +53,15 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   BUSTUB_ASSERT(index < GetSize(), "index overflow");
   return key_array_[index];
 }
+
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
   BUSTUB_ASSERT(index < GetSize(), "index overflow");
   return rid_array_[index];
 }
-INDEX_TEMPLATE_ARGUMENTS
 
+INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
   BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
   BUSTUB_ASSERT(index < GetSize(), "index overflow");
@@ -72,6 +73,20 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetValueAt(int index, const ValueType &value) {
   BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
   BUSTUB_ASSERT(index < GetSize(), "index overflow");
   rid_array_[index] = value;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAtRef(int index) -> KeyType & {
+  BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
+  BUSTUB_ASSERT(index < GetSize(), "index overflow");
+  return key_array_[index];
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAtRef(int index) -> ValueType & {
+  BUSTUB_ASSERT(index >= 0, "index should bigger than 0");
+  BUSTUB_ASSERT(index < GetSize(), "index overflow");
+  return rid_array_[index];
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -190,6 +205,16 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CombinePage(BPlusTreeLeafPage &other) {
   next_page_id_ = other.next_page_id_;
   SetSize(this_size + other_size);
   other.SetSize(0);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int {
+  for (int i = 0; i < GetSize(); i++) {
+    if (comparator(key, KeyAt(i)) <= 0) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
