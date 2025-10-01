@@ -356,7 +356,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   // 先删除当前节点的key
   leaf->DeleteKey(target_key, comparator_, true);
   int left_size = left_page->GetSize();
-  if (left_size - 1 > (left_page->GetMaxSize() + 1) / 2) {
+  if (left_page->GetSize() > (left_page->GetMaxSize() + 2) / 2) {
     // 2.1.1 左节点的key_value插入
     // todo
     leaf->InsertKeyValue(left_page->KeyAt(left_size - 1), left_page->ValueAt(left_size - 1), comparator);
@@ -393,7 +393,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
     // 2.1 判断，尝试借用节点
     int cur_size = cur_internal->GetSize();
     int right_size = right_page->GetSize();
-    if (right_size - 1 > (right_page->GetMaxSize() + 1) / 2) {
+    if (right_size > (right_page->GetMaxSize() + 2) / 2) {
       // 2.1.1 从右节点借用一个
       BUSTUB_ASSERT(right_size > 0, "error");
       cur_internal->SetSize(cur_size + 1);
@@ -421,7 +421,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
 
   // 3.1 尝试借用节点
   int left_size = left_page->GetSize();
-  if (left_size - 1 > (left_page->GetMaxSize() + 1) / 2) {
+  if (left_size > (left_page->GetMaxSize() + 2) / 2) {
     // 3.1.1 从左节点借用一个
     BUSTUB_ASSERT(left_size > 0, "error");
     KeyType k = left_page->KeyAt(left_size - 1);

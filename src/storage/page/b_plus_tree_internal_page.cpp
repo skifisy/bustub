@@ -209,6 +209,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKeyByIndex(int key_index) -> bool {
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CombinePage(BPlusTreeInternalPage &other) {
+  BUSTUB_ASSERT(GetSize() + other.GetSize() <= GetMaxSize(), "error");
   int left = GetSize();
   int right = 0;
   for (; right < other.GetSize(); right++, left++) {
