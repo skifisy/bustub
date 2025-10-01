@@ -154,7 +154,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
   }
   --left;
   // 4. 否则this继续寻找key的位置
-  for (; left >= 0 && comparator(key_array_[left], key) > 0; --left) {
+  for (; left >= 1 && comparator(key_array_[left], key) > 0; --left) {
     key_array_[left + 1] = key_array_[left];
     page_id_array_[left + 1] = page_id_array_[left];
   }
@@ -212,10 +212,11 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CombinePage(BPlusTreeInternalPage &other) {
   int left = GetSize();
   int right = 0;
   for (; right < other.GetSize(); right++, left++) {
-    key_array_[left] = key_array_[right];
-    page_id_array_[left] = page_id_array_[right];
+    key_array_[left] = other.key_array_[right];
+    page_id_array_[left] = other.page_id_array_[right];
   }
-  SetSize(right);
+  BUSTUB_ASSERT(GetSize() + other.GetSize() == left, "error");
+  SetSize(left);
   other.SetSize(0);
 }
 

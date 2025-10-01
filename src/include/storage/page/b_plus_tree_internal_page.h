@@ -135,7 +135,7 @@ class BPlusTreeInternalPage : public BPlusTreePage {
     bool first = true;
 
     // First key of internal page is always invalid
-    for (int i = 1; i < GetSize(); i++) {
+    for (int i = 0; i < GetSize(); i++) {
       KeyType key = KeyAt(i);
       if (first) {
         first = false;

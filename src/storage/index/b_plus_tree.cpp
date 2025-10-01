@@ -174,10 +174,12 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   KeyType new_key = new_leaf->KeyAt(0);
   page_id_t new_value = new_page_id;
 
+  WritePageGuard parent_guard;
+  InternalPage *parent = nullptr;
   while (!ctx.write_set_.empty()) {
-    WritePageGuard parent_guard = std::move(ctx.write_set_.back());
+    parent_guard = std::move(ctx.write_set_.back());
     ctx.write_set_.pop_back();
-    auto parent = parent_guard.AsMut<InternalPage>();
+    parent = parent_guard.AsMut<InternalPage>();
     BUSTUB_ASSERT(!parent->IsLeafPage(), "parent should be internal page");
     // 3.2.2 内部节点非满，直接插入
     if (parent->InsertKeyValue(new_key, new_value, comparator_)) {
@@ -201,6 +203,11 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   new_root->SetKeyAt(1, new_key);
   new_root->SetValueAt(0, ctx.root_page_id_);
   new_root->SetValueAt(1, new_value);
+  if (parent == nullptr) {
+    new_root->SetKeyAt(0, leaf->KeyAt(0));
+  } else {
+    new_root->SetKeyAt(0, parent->KeyAt(0));
+  }
   header->root_page_id_ = new_root_id;
   return true;
 }
@@ -238,10 +245,15 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   BUSTUB_ASSERT(leaf->IsLeafPage() == true, "is not leaf page");
   // 4.1 leaf节点数量大于一半，直接删除key；或者leaf为root，直接删除
   if (leaf->DeleteKey(key, comparator_, root_id == leaf_guard.GetPageId())) {
+    if (leaf->GetSize() == 0) {
+      header->root_page_id_ = INVALID_PAGE_ID;
+      bpm_->DeletePage(root_id);
+    }
     return;
   }
   // 4.2 leaf节点key数量等于一半-1，从兄弟节点借一个条目，或者直接合并
-  BUSTUB_ASSERT(leaf->GetSize() == ((leaf->GetMaxSize() + 1) / 2 - 1), "error");
+  // leaf数量等于min值，就直接借条目
+  BUSTUB_ASSERT(leaf->GetSize() == (leaf->GetMaxSize() + 1) / 2, "error");
   BUSTUB_ASSERT(leaf_guard.GetPageId() != root_id, "error");
   BUSTUB_ASSERT(!ctx.write_set_.empty(), "error");
   WritePageGuard parent_guard = std::move(ctx.write_set_.back());
@@ -257,33 +269,34 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
 
   // 5. 删除父节点的key-value
   int index_tobe_deleted = sibling_ret.second;
+  if (parent->DeleteKeyByIndex(index_tobe_deleted)) {
+    return;
+  }
   WritePageGuard cur_page_guard;
   // 根据路径，循环删除
   while (!ctx.write_set_.empty()) {
     cur_page_guard = std::move(parent_guard);
-    auto cur_page = cur_page_guard.AsMut<InternalPage>();
     parent_guard = std::move(ctx.write_set_.back());
     parent = parent_guard.AsMut<InternalPage>();
     ctx.write_set_.pop_back();
-    // 5.1 大于一半，直接删除
-    if (cur_page->DeleteKeyByIndex(index_tobe_deleted)) {
-      return;
-    }
+
     // 5.2 借条目，合并节点
     auto [is_borrow, key_index, key] = BorrowOrCombineWithSiblingInternalPage(cur_page_guard, parent, comparator_);
     // 处理parent节点
-    if(is_borrow) {
+    if (is_borrow) {
       // 更新parent的key值
       parent->SetKeyAt(key_index, key);
-    } else {
-      // 删除parent中的key值
-      parent->DeleteKeyByIndex(key_index);
+      return;
+    }
+    // 删除parent中的key值
+    if (parent->DeleteKeyByIndex(key_index)) {
+      return;
     }
   }
   // 6. 合并到根节点，降低树高
-  if(parent->GetSize() <= 1) {
+  if (parent->GetSize() <= 1) {
     // size减少为0，那么该节点肯定为根节点，删除节点，更新根节点
-    BUSTUB_ASSERT(parent_guard.GetPageId()==root_id, "error");
+    BUSTUB_ASSERT(parent_guard.GetPageId() == root_id, "error");
     header->root_page_id_ = parent->ValueAt(0);
     page_id_t parent_id = parent_guard.GetPageId();
     parent_guard.Drop();
@@ -309,7 +322,9 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
     // 1.1 右节点能借到一个node
     // 1.1.1 将left的位置空出来
     leaf->DeleteKey(target_key, comparator, true);
-    if (right_page->GetSize() > (right_page->GetMaxSize() + 1) / 2) {
+    if (right_page->GetSize() + leaf->GetSize() > leaf->GetMaxSize()) {
+      // right_page->GetSize() - 1 > (right_page->GetMaxSize() + 1) / 2
+      BUSTUB_ASSERT(right_page->GetSize() > (right_page->GetMaxSize() + 2) / 2, "error");
       // 1.1.2 将右节点的首个key借过来
       int insert_pos = leaf->GetSize();
       KeyType right_key = right_page->KeyAt(0);
@@ -322,7 +337,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
       parent->SetKeyAt(key_index + 1, right_key);  // value不变
       return {true, -1};
     }
-
+    BUSTUB_ASSERT(right_page->GetSize() <= (right_page->GetMaxSize() + 2) / 2, "error");
     // 1.2 借不到node直接合并
     // 1.2.1 合并
     leaf->CombinePage(*right_page);
@@ -341,7 +356,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   // 先删除当前节点的key
   leaf->DeleteKey(target_key, comparator_, true);
   int left_size = left_page->GetSize();
-  if (left_size > (left_page->GetMaxSize() + 1) / 2) {
+  if (left_size - 1 > (left_page->GetMaxSize() + 1) / 2) {
     // 2.1.1 左节点的key_value插入
     // todo
     leaf->InsertKeyValue(left_page->KeyAt(left_size - 1), left_page->ValueAt(left_size - 1), comparator);

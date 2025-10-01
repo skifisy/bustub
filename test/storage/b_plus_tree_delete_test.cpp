@@ -45,6 +45,7 @@ TEST(BPlusTreeTests, DeleteTestNoIterator) {
     index_key.SetFromInteger(key);
     tree.Insert(index_key, rid);
   }
+  std::cout << tree.DrawBPlusTree() << std::endl;
 
   std::vector<RID> rids;
   for (auto key : keys) {
@@ -61,6 +62,7 @@ TEST(BPlusTreeTests, DeleteTestNoIterator) {
   for (auto key : remove_keys) {
     index_key.SetFromInteger(key);
     tree.Remove(index_key);
+    std::cout << tree.DrawBPlusTree() << std::endl;
   }
 
   int64_t size = 0;
@@ -102,7 +104,7 @@ TEST(BPlusTreeTests, SequentialEdgeMixTest) {  // NOLINT
   for (int leaf_max_size = 2; leaf_max_size <= 5; leaf_max_size++) {
     // create and fetch header_page
     page_id_t page_id = bpm->NewPage();
-
+    std::cout << "leaf_max_size: " << leaf_max_size << std::endl;
     // create b+ tree
     BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, leaf_max_size, 3);
     GenericKey<8> index_key;
@@ -119,29 +121,39 @@ TEST(BPlusTreeTests, SequentialEdgeMixTest) {  // NOLINT
       inserted.push_back(key);
       auto res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
       ASSERT_TRUE(res);
+      std::cout << tree.DrawBPlusTree() << std::endl;
+      std::cout << "----------------------------------------------------" << std::endl;
     }
-
+    std::cout << "----------------------------------------------------" << std::endl;
+    std::cout << "----------------------------------------------------" << std::endl;
+    std::cout << "remove 1" << std::endl;
     index_key.SetFromInteger(1);
     tree.Remove(index_key);
     deleted.push_back(1);
     inserted.erase(std::find(inserted.begin(), inserted.end(), 1));
     auto res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
     ASSERT_TRUE(res);
+    std::cout << tree.DrawBPlusTree() << std::endl;
 
+    std::cout << "insert 3" << std::endl;
     index_key.SetFromInteger(3);
     rid.Set(3, 3);
     tree.Insert(index_key, rid);
     inserted.push_back(3);
     res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
     ASSERT_TRUE(res);
-
+    std::cout << tree.DrawBPlusTree() << std::endl;
+    std::cout << "----------------------------------------------------" << std::endl;
     keys = {4, 14, 6, 2, 15, -2, -1, 3, 5, 25, 20};
     for (auto key : keys) {
+      std::cout << "remove key: " << key << std::endl;
       index_key.SetFromInteger(key);
       tree.Remove(index_key);
       deleted.push_back(key);
       inserted.erase(std::find(inserted.begin(), inserted.end(), key));
       res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
+      std::cout << tree.DrawBPlusTree() << std::endl;
+      std::cout << "----------------------------------------------------" << std::endl;
       ASSERT_TRUE(res);
     }
   }

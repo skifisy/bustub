@@ -183,9 +183,11 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CombinePage(BPlusTreeLeafPage &other) {
   int this_size = GetSize();
   int other_size = other.GetSize();
   BUSTUB_ASSERT(this_size + other_size <= GetMaxSize(), "error");
-  for (int left = this_size, right = 0; right < other_size; right++) {
+  for (int left = this_size, right = 0; right < other_size; right++, left++) {
     key_array_[left] = other.key_array_[right];
+    rid_array_[left] = other.rid_array_[right];
   }
+  next_page_id_ = other.next_page_id_;
   SetSize(this_size + other_size);
   other.SetSize(0);
 }
