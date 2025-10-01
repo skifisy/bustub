@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 
 #include "buffer/buffer_pool_manager.h"
@@ -45,7 +46,6 @@ TEST(BPlusTreeTests, DeleteTestNoIterator) {
     index_key.SetFromInteger(key);
     tree.Insert(index_key, rid);
   }
-  std::cout << tree.DrawBPlusTree() << std::endl;
 
   std::vector<RID> rids;
   for (auto key : keys) {
@@ -62,7 +62,6 @@ TEST(BPlusTreeTests, DeleteTestNoIterator) {
   for (auto key : remove_keys) {
     index_key.SetFromInteger(key);
     tree.Remove(index_key);
-    std::cout << tree.DrawBPlusTree() << std::endl;
   }
 
   int64_t size = 0;
@@ -104,7 +103,6 @@ TEST(BPlusTreeTests, SequentialEdgeMixTest) {  // NOLINT
   for (int leaf_max_size = 2; leaf_max_size <= 5; leaf_max_size++) {
     // create and fetch header_page
     page_id_t page_id = bpm->NewPage();
-    std::cout << "leaf_max_size: " << leaf_max_size << std::endl;
     // create b+ tree
     BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, leaf_max_size, 3);
     GenericKey<8> index_key;
@@ -121,43 +119,79 @@ TEST(BPlusTreeTests, SequentialEdgeMixTest) {  // NOLINT
       inserted.push_back(key);
       auto res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
       ASSERT_TRUE(res);
-      std::cout << tree.DrawBPlusTree() << std::endl;
-      std::cout << "----------------------------------------------------" << std::endl;
     }
-    std::cout << "----------------------------------------------------" << std::endl;
-    std::cout << "----------------------------------------------------" << std::endl;
-    std::cout << "remove 1" << std::endl;
     index_key.SetFromInteger(1);
     tree.Remove(index_key);
     deleted.push_back(1);
     inserted.erase(std::find(inserted.begin(), inserted.end(), 1));
     auto res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
     ASSERT_TRUE(res);
-    std::cout << tree.DrawBPlusTree() << std::endl;
 
-    std::cout << "insert 3" << std::endl;
     index_key.SetFromInteger(3);
     rid.Set(3, 3);
     tree.Insert(index_key, rid);
     inserted.push_back(3);
     res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
     ASSERT_TRUE(res);
-    std::cout << tree.DrawBPlusTree() << std::endl;
-    std::cout << "----------------------------------------------------" << std::endl;
     keys = {4, 14, 6, 2, 15, -2, -1, 3, 5, 25, 20};
     for (auto key : keys) {
-      std::cout << "remove key: " << key << std::endl;
       index_key.SetFromInteger(key);
       tree.Remove(index_key);
       deleted.push_back(key);
       inserted.erase(std::find(inserted.begin(), inserted.end(), key));
       res = TreeValuesMatch<GenericKey<8>, RID, GenericComparator<8>>(tree, inserted, deleted);
-      std::cout << tree.DrawBPlusTree() << std::endl;
-      std::cout << "----------------------------------------------------" << std::endl;
       ASSERT_TRUE(res);
     }
   }
+  delete bpm;
+}
 
+// 重复插入或重复删除数据
+TEST(BPlusTreeTests, DeleteDuplicateTest) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+
+  auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
+  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  // allocate header_page
+  page_id_t page_id = bpm->NewPage();
+  // create b+ tree
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 3);
+  GenericKey<8> index_key;
+  RID rid;
+
+  std::vector<int64_t> keys = {1, 5, 5, 2, 3, 3, 4};
+  for (auto key : keys) {
+    std::cout << "insert: " << key << std::endl;
+    int64_t value = key & 0xFFFFFFFF;
+    rid.Set(static_cast<int32_t>(key >> 32), value);
+    index_key.SetFromInteger(key);
+    tree.Insert(index_key, rid);
+    std::cout << tree.DrawBPlusTree() << std::endl;
+  }
+  int64_t k = 5;
+  index_key.SetFromInteger(k);
+  EXPECT_FALSE(tree.Insert(index_key, rid));
+
+  std::vector<RID> rids;
+  for (auto key : keys) {
+    rids.clear();
+    index_key.SetFromInteger(key);
+    tree.GetValue(index_key, &rids);
+    EXPECT_EQ(rids.size(), 1);
+
+    int64_t value = key & 0xFFFFFFFF;
+    EXPECT_EQ(rids[0].GetSlotNum(), value);
+  }
+
+  std::vector<int64_t> remove_keys = {1, 5, 5, 6, 3, 4};
+  for (auto key : remove_keys) {
+    std::cout << "remove: " << key << std::endl;
+    index_key.SetFromInteger(key);
+    tree.Remove(index_key);
+    std::cout << tree.DrawBPlusTree() << std::endl;
+  }
   delete bpm;
 }
 }  // namespace bustub

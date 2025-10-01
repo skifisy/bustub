@@ -146,8 +146,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
     auto root_page = bpm_->WritePage(root_id);
     auto root = root_page.AsMut<LeafPage>();
     root->Init(leaf_max_size_);
-    root->InsertKeyValue(key, value, comparator_);
-    return true;
+    return root->InsertKeyValue(key, value, comparator_);
   }
   // 3. 获取root_page, 搜索leaf
   ctx.write_set_.emplace_back(bpm_->WritePage(root_id));
@@ -158,14 +157,29 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   auto leaf = leaf_guard.AsMut<LeafPage>();
   BUSTUB_ASSERT(leaf->IsLeafPage() == true, "is not leaf page");
   // 3.1.1 叶子节点没满，直接插入节点
-  if (leaf->InsertKeyValue(key, value, comparator_)) {
-    return true;
+  int pos = leaf->SearchKeyIndex(key, comparator_);
+  if (pos != -1) {
+    if (comparator_(leaf->KeyAt(pos), key) == 0) {
+      return false;
+    }
+  }
+  if (pos == -1) {
+    if (leaf->GetSize() == 0) {
+      pos = 0;
+    } else {
+      BUSTUB_ASSERT(comparator_(leaf->KeyAt(0), key) < 0, "error");
+      pos = leaf->GetSize();
+    }
+  }
+  if (!leaf->IsFull()) {
+    return leaf->InsertKeyValueByIndex(key, value, pos, comparator_);
   }
   // 3.1.2 叶子节点满，分裂节点
   auto new_page_id = bpm_->NewPage();
   auto new_page = bpm_->WritePage(new_page_id);
   auto new_leaf = new_page.AsMut<LeafPage>();
   new_leaf->Init(leaf_max_size_);
+  new_leaf->SetNextPageId(leaf->GetNextPageId());
   leaf->SetNextPageId(new_page_id);
   leaf->SplitLeafPage(*new_leaf, key, value, comparator_);
 
@@ -312,7 +326,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   BUSTUB_ASSERT(leaf->IsLeafPage(), "error");
   BUSTUB_ASSERT(!parent->IsLeafPage(), "error");
   BUSTUB_ASSERT(leaf->GetSize() <= (leaf->GetMaxSize() + 1) / 2, "error");
-
+  BUSTUB_ASSERT(key_index >= 0, "error");
   // 1. 处理右节点
   if (key_index + 1 < parent->GetSize()) {
     page_id_t right_page_id = parent->ValueAt(key_index + 1);
@@ -478,6 +492,14 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   Context ctx;
+  // 先处理header节点
+  ReadPageGuard header_page = bpm_->ReadPage(header_page_id_);
+  auto header = header_page.As<BPlusTreeHeaderPage>();
+  if (header->root_page_id_ == INVALID_PAGE_ID) {
+    return INDEXITERATOR_TYPE();
+  }
+  ctx.root_page_id_ = header->root_page_id_;
+  ctx.read_set_.emplace_back(bpm_->ReadPage(ctx.root_page_id_));
   LeafSearch(key, ctx, true);
   ReadPageGuard guard = std::move(ctx.read_set_.back());
   auto leaf = guard.As<LeafPage>();
@@ -487,6 +509,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
     return INDEXITERATOR_TYPE();
   }
   page_id_t pid = guard.GetPageId();
+  guard.Drop();
   return INDEXITERATOR_TYPE(bpm_->WritePage(pid), pos, bpm_);
 }
 

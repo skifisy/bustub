@@ -92,17 +92,38 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAtRef(int index) -> ValueType & {
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator)
     -> bool {
-  if (IsFull()) {
-    return false;
-  }
+  BUSTUB_ASSERT(!IsFull(), "leaf is full");
   int pos = 0;
   for (int i = 0; i < GetSize(); i++) {
-    if (comparator(key_array_[i], key) < 0) {
+    int comp = comparator(key_array_[i], key);
+    if (comp < 0) {
       ++pos;
+    } else if (comp == 0) {
+      return false;
     } else {
       break;
     }
   }
+
+  // 移动
+  for (int i = GetSize(); i > pos; --i) {
+    key_array_[i] = key_array_[i - 1];
+    rid_array_[i] = rid_array_[i - 1];
+    BUSTUB_ASSERT(comparator(key_array_[i], key) > 0, "assertion false");
+  }
+  // 插入
+  key_array_[pos] = key;
+  rid_array_[pos] = value;
+  // 更新大小
+  SetSize(GetSize() + 1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertKeyValueByIndex(const KeyType &key, const ValueType &value, int pos,
+                                                       KeyComparator &comparator) -> bool {
+  BUSTUB_ASSERT(!IsFull(), "leaf is full");
+
   // 移动
   for (int i = GetSize(); i > pos; --i) {
     key_array_[i] = key_array_[i - 1];
@@ -165,10 +186,6 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SplitLeafPage(BPlusTreeLeafPage &other,  //
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_root) -> bool {
-  int min_size = (GetMaxSize() + 1) / 2;
-  if (!is_root && GetSize() <= min_size) {
-    return false;
-  }
   // TODO(optimize) 优化为二分查找
   // 1. 查找删除的key
   int pos = -1;
@@ -182,6 +199,11 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &co
   // 2. 找不到也返回true
   if (pos == -1) {
     return true;
+  }
+
+  int min_size = (GetMaxSize() + 1) / 2;
+  if (!is_root && GetSize() <= min_size) {
+    return false;
   }
 
   // 3. 删除该key
