@@ -131,11 +131,15 @@ class BPlusTreeInternalPage : public BPlusTreePage {
    * @return The string representation of all keys in the current internal page
    */
   auto ToString() const -> std::string {
-    std::string kstr = "(";
+    std::string kstr;
+    if (GetSize() > 0) {
+      kstr.append(std::to_string(KeyAt(0).ToString()));
+    }
+    kstr.append("(");
     bool first = true;
 
     // First key of internal page is always invalid
-    for (int i = 0; i < GetSize(); i++) {
+    for (int i = 1; i < GetSize(); i++) {
       KeyType key = KeyAt(i);
       if (first) {
         first = false;

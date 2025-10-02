@@ -99,12 +99,14 @@ auto main(int argc, char **argv) -> int {
         std::cin >> key;
         index_key.SetFromInteger(key);
         tree.Remove(index_key);
+        std::cout << tree.DrawBPlusTree() << std::endl;
         break;
       case 'i':
         std::cin >> key;
         rid.Set(static_cast<int32_t>(key >> 32), static_cast<int>(key & 0xFFFFFFFF));
         index_key.SetFromInteger(key);
         tree.Insert(index_key, rid);
+        std::cout << tree.DrawBPlusTree() << std::endl;
         break;
       case 'f':
         std::cin >> filename;

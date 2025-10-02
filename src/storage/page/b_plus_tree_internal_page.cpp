@@ -196,7 +196,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKeyByIndex(int key_index) -> bool {
   // 当前数量大于一半，可以直接删除，无需调整
   bool ret = GetSize() > (GetMaxSize() + 1) / 2;
 
-  BUSTUB_ASSERT(key_index > 0, "error");
+  BUSTUB_ASSERT(key_index >= 0, "error");
   BUSTUB_ASSERT(key_index < GetSize(), "error");
 
   for (int i = key_index; i < GetSize() - 1; i++) {

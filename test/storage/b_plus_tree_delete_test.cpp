@@ -194,4 +194,50 @@ TEST(BPlusTreeTests, DeleteDuplicateTest) {
   }
   delete bpm;
 }
+
+TEST(BPlusTreeTests, DeleteComplex) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+
+  auto disk_manager = std::make_unique<DiskManagerUnlimitedMemory>();
+  auto *bpm = new BufferPoolManager(50, disk_manager.get());
+  // allocate header_page
+  page_id_t page_id = bpm->NewPage();
+  // create b+ tree
+  BPlusTree<GenericKey<8>, RID, GenericComparator<8>> tree("foo_pk", page_id, bpm, comparator, 2, 4);
+  GenericKey<8> index_key;
+  RID rid;
+
+  std::vector<int64_t> keys = {10, 20, 30, 40, 50, 60, 70};
+  for (auto key : keys) {
+    std::cout << "insert: " << key << std::endl;
+    int64_t value = key & 0xFFFFFFFF;
+    rid.Set(static_cast<int32_t>(key >> 32), value);
+    index_key.SetFromInteger(key);
+    tree.Insert(index_key, rid);
+    std::cout << tree.DrawBPlusTree() << std::endl;
+  }
+
+  std::vector<RID> rids;
+  for (auto key : keys) {
+    rids.clear();
+    index_key.SetFromInteger(key);
+    tree.GetValue(index_key, &rids);
+    EXPECT_EQ(rids.size(), 1);
+
+    int64_t value = key & 0xFFFFFFFF;
+    EXPECT_EQ(rids[0].GetSlotNum(), value);
+  }
+
+  // 向右节点借key
+  std::vector<int64_t> remove_keys = {20, 30};
+  for (auto key : remove_keys) {
+    std::cout << "remove: " << key << std::endl;
+    index_key.SetFromInteger(key);
+    tree.Remove(index_key);
+    std::cout << tree.DrawBPlusTree() << std::endl;
+  }
+  delete bpm;
+}
 }  // namespace bustub

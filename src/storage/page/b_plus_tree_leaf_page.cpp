@@ -207,7 +207,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &co
   }
 
   // 3. 删除该key
-  for (int i = pos; i < GetSize(); i++) {
+  for (int i = pos; i < GetSize() - 1; i++) {
     key_array_[i] = key_array_[i + 1];
     rid_array_[i] = rid_array_[i + 1];
   }
