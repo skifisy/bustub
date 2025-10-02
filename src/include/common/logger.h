@@ -100,8 +100,9 @@ void OutputLogHeader(const char *file, int line, const char *func, int level);
 // #pragma message("LOG_ERROR was enabled.")
 #define LOG_ERROR(...)                                                      \
   OutputLogHeader(__SHORT_FILE__, __LINE__, __FUNCTION__, LOG_LEVEL_ERROR); \
+  ::fprintf(LOG_OUTPUT_STREAM, "\033[31m"); /* 红色 */                    \
   ::fprintf(LOG_OUTPUT_STREAM, __VA_ARGS__);                                \
-  fprintf(LOG_OUTPUT_STREAM, "\n");                                         \
+  fprintf(LOG_OUTPUT_STREAM, "\033[0m\n"); /* 重置颜色并换行 */      \
   ::fflush(stdout)
 #else
 #define LOG_ERROR(...) ((void)0)
@@ -115,8 +116,9 @@ void OutputLogHeader(const char *file, int line, const char *func, int level);
 // #pragma message("LOG_WARN was enabled.")
 #define LOG_WARN(...)                                                      \
   OutputLogHeader(__SHORT_FILE__, __LINE__, __FUNCTION__, LOG_LEVEL_WARN); \
+  ::fprintf(LOG_OUTPUT_STREAM, "\033[33m"); /* 黄色 */                   \
   ::fprintf(LOG_OUTPUT_STREAM, __VA_ARGS__);                               \
-  fprintf(LOG_OUTPUT_STREAM, "\n");                                        \
+  fprintf(LOG_OUTPUT_STREAM, "\033[0m\n"); /* 重置颜色并换行 */     \
   ::fflush(stdout)
 #else
 #define LOG_WARN(...) ((void)0)
@@ -130,8 +132,9 @@ void OutputLogHeader(const char *file, int line, const char *func, int level);
 // #pragma message("LOG_INFO was enabled.")
 #define LOG_INFO(...)                                                      \
   OutputLogHeader(__SHORT_FILE__, __LINE__, __FUNCTION__, LOG_LEVEL_INFO); \
+  ::fprintf(LOG_OUTPUT_STREAM, "\033[34m"); /* 蓝色 */                   \
   ::fprintf(LOG_OUTPUT_STREAM, __VA_ARGS__);                               \
-  fprintf(LOG_OUTPUT_STREAM, "\n");                                        \
+  fprintf(LOG_OUTPUT_STREAM, "\033[0m\n"); /* 重置颜色并换行 */     \
   ::fflush(stdout)
 #else
 #define LOG_INFO(...) ((void)0)
@@ -145,8 +148,9 @@ void OutputLogHeader(const char *file, int line, const char *func, int level);
 // #pragma message("LOG_DEBUG was enabled.")
 #define LOG_DEBUG(...)                                                      \
   OutputLogHeader(__SHORT_FILE__, __LINE__, __FUNCTION__, LOG_LEVEL_DEBUG); \
+  ::fprintf(LOG_OUTPUT_STREAM, "\033[32m"); /* 绿色 */                    \
   ::fprintf(LOG_OUTPUT_STREAM, __VA_ARGS__);                                \
-  fprintf(LOG_OUTPUT_STREAM, "\n");                                         \
+  fprintf(LOG_OUTPUT_STREAM, "\033[0m\n"); /* 重置颜色并换行 */      \
   ::fflush(stdout)
 #else
 #define LOG_DEBUG(...) ((void)0)

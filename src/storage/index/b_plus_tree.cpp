@@ -375,7 +375,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
     // todo
     leaf->InsertKeyValue(left_page->KeyAt(left_size - 1), left_page->ValueAt(left_size - 1), comparator);
     // 2.1.2 左节点大小-1
-    leaf->SetSize(left_size - 1);
+    left_page->SetSize(left_size - 1);
     // 2.1.3 右节点新key上传
     parent->SetKeyAt(key_index, leaf->KeyAt(0));
     return {true, -1};

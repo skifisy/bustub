@@ -11,13 +11,17 @@
 //===----------------------------------------------------------------------===//
 
 #include <chrono>  // NOLINT
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <future>  // NOLINT
+#include <memory>
+#include <string>
 #include <thread>  // NOLINT
 
 #include "buffer/buffer_pool_manager.h"
+#include "common/logger.h"
 #include "gtest/gtest.h"
 #include "storage/disk/disk_manager_memory.h"
 #include "storage/index/b_plus_tree.h"
@@ -54,6 +58,8 @@ void InsertHelper(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree, con
     rid.Set(static_cast<int32_t>(key >> 32), value);
     index_key.SetFromInteger(key);
     tree->Insert(index_key, rid);
+    // std::cout << "thread: " << std::this_thread::get_id() << "; insert: " << std::to_string(key).c_str() <<
+    // std::endl; std::cout << tree->DrawBPlusTree() << std::endl;
   }
 }
 
@@ -81,6 +87,8 @@ void DeleteHelper(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree, con
   for (auto key : remove_keys) {
     index_key.SetFromInteger(key);
     tree->Remove(index_key);
+    // std::cout << "thread: " << std::this_thread::get_id() << "; delete: " << std::to_string(key).c_str() <<
+    // std::endl; std::cout << tree->DrawBPlusTree() << std::endl;
   }
 }
 
@@ -362,15 +370,16 @@ void MixTest1Call() {
       threads[i].join();
     }
 
-    int64_t size = 0;
+    size_t size = 0;
 
     for (auto iter = tree.Begin(); iter != tree.End(); ++iter) {
       const auto &pair = *iter;
-      ASSERT_EQ((pair.first).ToString(), for_insert[size]);
+      ASSERT_TRUE(size < for_insert.size());
+      EXPECT_EQ((pair.first).ToString(), for_insert[size]);
       size++;
     }
 
-    ASSERT_EQ(size, for_insert.size());
+    EXPECT_EQ(size, for_insert.size());
 
     delete disk_manager;
     delete bpm;
