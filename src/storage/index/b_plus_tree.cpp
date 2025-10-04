@@ -65,8 +65,9 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   }
   // search场景不需要 ctx.root_page_id_ = root_id;
   ctx.read_set_.emplace_back(bpm_->ReadPage(root_id));
+  guard.Drop();  // read操作必然是安全节点，所以可以释放父级的header
   // 2. 从root_page找到叶子节点
-  LeafSearch(key, ctx, true);
+  LeafSearchRead(key, ctx);
 
   // 3. 从叶子节点中找到key->value
   auto &leaf_page = ctx.read_set_.back();
@@ -86,35 +87,21 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::LeafSearch(const KeyType &key, Context &ctx, bool is_read) {
-  const BPlusTreePage *root = nullptr;
-  if (is_read) {
-    auto &p = ctx.read_set_.back();
-    root = p.As<BPlusTreePage>();
-  } else {
-    auto &p = ctx.write_set_.back();
-    root = p.As<BPlusTreePage>();
-  }
-  if (root->IsLeafPage()) {
-    return;
-  }
-  // root为内部节点，遍历key值，找到对应的孩子节点
-  auto internal_page = reinterpret_cast<const InternalPage *>(root);
-  int child_size = internal_page->GetSize();
-  page_id_t child_page_id = internal_page->ValueAt(child_size - 1);
-  // TODO(optimize) 二分查找
-  for (int i = 1; i < child_size; i++) {
-    if (comparator_(key, internal_page->KeyAt(i)) < 0) {
-      child_page_id = internal_page->ValueAt(i - 1);
-      break;
+void BPLUSTREE_TYPE::LeafSearchRead(const KeyType &key, Context &ctx) {
+  while (true) {
+    auto &root_guard = ctx.read_set_.back();
+    auto root = root_guard.As<BPlusTreePage>();
+    if (root->IsLeafPage()) {
+      return;
     }
-  }
-  if (is_read) {
+    // 此时root为内部节点，根据key找到对应的孩子节点
+    auto internal_page = reinterpret_cast<const InternalPage *>(root);
+    int index = internal_page->SearchKeyIndex(key, comparator_);
+    page_id_t child_page_id = internal_page->ValueAt(index);
     ctx.read_set_.emplace_back(bpm_->ReadPage(child_page_id));
-  } else {
-    ctx.write_set_.emplace_back(bpm_->WritePage(child_page_id));
+    // 安全节点，释放祖先节点
+    ctx.read_set_.pop_front();
   }
-  LeafSearch(key, ctx, is_read);
 }
 
 /*****************************************************************************
@@ -150,7 +137,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   }
   // 3. 获取root_page, 搜索leaf
   ctx.write_set_.emplace_back(bpm_->WritePage(root_id));
-  LeafSearch(key, ctx, false);
+  LeafSearch<true>(key, ctx);
   // 3.1 先插入leaf节点
   WritePageGuard leaf_guard = std::move(ctx.write_set_.back());
   ctx.write_set_.pop_back();
@@ -222,6 +209,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   } else {
     new_root->SetKeyAt(0, parent->KeyAt(0));
   }
+  BUSTUB_ASSERT(ctx.header_page_.has_value(), "error");
   header->root_page_id_ = new_root_id;
   return true;
 }
@@ -251,7 +239,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   }
   // 3. 获取root_page，搜索leaf
   ctx.write_set_.emplace_back(bpm_->WritePage(root_id));
-  LeafSearch(key, ctx, false);
+  LeafSearch<false>(key, ctx);
   // 4. 先在leaf节点中尝试删除
   WritePageGuard leaf_guard = std::move(ctx.write_set_.back());
   ctx.write_set_.pop_back();
@@ -311,6 +299,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   if (parent->GetSize() <= 1) {
     // size减少为0，那么该节点肯定为根节点，删除节点，更新根节点
     BUSTUB_ASSERT(parent_guard.GetPageId() == root_id, "error");
+    BUSTUB_ASSERT(ctx.header_page_.has_value(), "error");
     header->root_page_id_ = parent->ValueAt(0);
     page_id_t parent_id = parent_guard.GetPageId();
     parent_guard.Drop();
@@ -491,26 +480,35 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
-  Context ctx;
   // 先处理header节点
   ReadPageGuard header_page = bpm_->ReadPage(header_page_id_);
   auto header = header_page.As<BPlusTreeHeaderPage>();
   if (header->root_page_id_ == INVALID_PAGE_ID) {
     return INDEXITERATOR_TYPE();
   }
-  ctx.root_page_id_ = header->root_page_id_;
-  ctx.read_set_.emplace_back(bpm_->ReadPage(ctx.root_page_id_));
-  LeafSearch(key, ctx, true);
-  ReadPageGuard guard = std::move(ctx.read_set_.back());
-  auto leaf = guard.As<LeafPage>();
-  BUSTUB_ASSERT(leaf->IsLeafPage(), "error");
+  auto cur_page_id = header->root_page_id_;
+  // 当迭代到叶子节点时，需要持有父节点，然后将叶子节点的读锁提升为写锁
+  ReadPageGuard cur = bpm_->ReadPage(cur_page_id);
+  ReadPageGuard parent = std::move(header_page);
+  auto cur_node = cur.As<BPlusTreePage>();
+  // 这里使用parent的目的是为了保护parent节点，防止被writer更改
+  // 所以，直接用类型无关的PageGuard保存即可
+  while (!cur_node->IsLeafPage()) {
+    auto internal_page = reinterpret_cast<const InternalPage *>(cur_node);
+    int index = internal_page->SearchKeyIndex(key, comparator_);
+    cur_page_id = internal_page->ValueAt(index);
+    parent = std::move(cur);
+    cur = bpm_->ReadPage(cur_page_id);
+    cur_node = cur.As<BPlusTreePage>();
+  }
+  auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
   int pos = leaf->SearchKeyIndex(key, comparator_);
   if (pos == -1) {
     return INDEXITERATOR_TYPE();
   }
-  page_id_t pid = guard.GetPageId();
-  guard.Drop();
-  return INDEXITERATOR_TYPE(bpm_->WritePage(pid), pos, bpm_);
+  // 读锁提升为写锁
+  cur.Drop();
+  return INDEXITERATOR_TYPE(bpm_->WritePage(cur_page_id), pos, bpm_);
 }
 
 /*

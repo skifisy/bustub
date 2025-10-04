@@ -86,6 +86,10 @@ class BPlusTreeInternalPage : public BPlusTreePage {
    */
   void SetValueAt(int index, const ValueType &value);
 
+  auto IsInsertSafe() const -> bool;
+
+  auto IsDeleteSafe() const -> bool;
+
   /**
    * @brief 插入一个key, value (有序)
    * @return true: 成功插入; false: 节点已满，插入失败
@@ -106,10 +110,10 @@ class BPlusTreeInternalPage : public BPlusTreePage {
                          KeyComparator &comparator) -> KeyType;
 
   /**
-   * @brief 寻找key所在的index
+   * @brief 寻找key所在的index (找到第一个小于等于key的位置，也就是search的位置)
    * @return position
    */
-  auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) -> int;
+  auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int;
 
   /**
    * @brief 大于一半，直接删除

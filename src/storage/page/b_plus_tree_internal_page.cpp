@@ -69,6 +69,12 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetValueAt(int index, const ValueType &valu
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::IsInsertSafe() const -> bool { return !IsFull(); }
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::IsDeleteSafe() const -> bool { return GetSize() > (GetMaxSize() + 1) / 2; }
+
+INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value,
                                                     KeyComparator &comparator) -> bool {
   if (IsFull()) {
@@ -164,7 +170,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) -> int {
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int {
   for (int i = 1; i < GetSize(); i++) {
     if (comparator(key, KeyAt(i)) < 0) {
       return i - 1;

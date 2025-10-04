@@ -128,7 +128,12 @@ class BPlusTree {
   void BatchOpsFromFile(const std::filesystem::path &file_name);
 
  private:
-  void LeafSearch(const KeyType &key, Context &ctx, bool is_read);
+  void LeafSearchRead(const KeyType &key, Context &ctx);
+  template <bool is_insert>
+  void LeafSearch(const KeyType &key, Context &ctx);
+
+  auto WriteRootPage() -> std::optional<WritePageGuard>;
+
   /**
    * @brief 借一个node，或者直接与兄弟节点合并
    * @return bool: true-借一个node, false-与兄弟节点合并
@@ -201,5 +206,52 @@ struct PrintableBPlusTree {
     }
   }
 };
+
+INDEX_TEMPLATE_ARGUMENTS
+template <bool is_insert>
+void BPLUSTREE_TYPE::LeafSearch(const KeyType &key, Context &ctx) {
+  while (true) {
+    auto &root_guard = ctx.write_set_.back();
+    auto root = root_guard.As<BPlusTreePage>();
+    auto drop_parent_page = [&root_guard, &ctx]() {
+      // 若internal节点或header节点是安全节点，那么header必然可以drop
+      if (ctx.header_page_) {
+        ctx.header_page_.reset();
+      }
+      while (&ctx.write_set_.front() != &root_guard) {
+        ctx.write_set_.pop_front();
+      }
+    };
+    if (root->IsLeafPage()) {
+      auto root_leaf = reinterpret_cast<const LeafPage *>(root);
+      if constexpr (is_insert) {
+        if (root_leaf->IsInsertSafe()) {
+          drop_parent_page();
+        }
+      } else {
+        if (root_leaf->IsDeleteSafe()) {
+          drop_parent_page();
+        }
+      }
+      return;
+    }
+
+    // 此时root为内部节点，根据key找到对应的孩子节点
+    auto root_internal = reinterpret_cast<const InternalPage *>(root);
+    if constexpr (is_insert) {
+      if (root_internal->IsInsertSafe()) {
+        drop_parent_page();
+      }
+    } else {
+      if (root_internal->IsDeleteSafe()) {
+        drop_parent_page();
+      }
+    }
+
+    int index = root_internal->SearchKeyIndex(key, comparator_);
+    page_id_t child_page_id = root_internal->ValueAt(index);
+    ctx.write_set_.emplace_back(bpm_->WritePage(child_page_id));
+  }
+}
 
 }  // namespace bustub

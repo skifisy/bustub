@@ -72,6 +72,12 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto ValueAtRef(int index) -> ValueType &;
 
   /**
+   * @brief 用于判断插入一个节点后是否为安全节点；即是否会引发分裂
+   */
+  auto IsInsertSafe() const -> bool;
+  auto IsDeleteSafe() const -> bool;
+
+  /**
    * @brief 插入一个key, value (有序)
    * @return true: 成功插入; false: 节点已满，插入失败
    */
