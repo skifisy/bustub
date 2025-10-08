@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -80,15 +81,9 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const Va
   if (IsFull()) {
     return false;
   }
-  int pos = 1;
-  for (int i = 1; i < GetSize(); i++) {
-    if (comparator(key_array_[i], key) < 0) {
-      ++pos;
-    } else {
-      break;
-    }
-  }
-  InsertKeyValueByIndex(key, value, pos, comparator);
+  int pos = SearchKeyIndex(key, comparator);
+  BUSTUB_ASSERT(pos == 0 || comparator(KeyAt(pos), key) != 0, "error");
+  InsertKeyValueByIndex(key, value, pos + 1, comparator);
   return true;
 }
 
@@ -171,12 +166,10 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SplitInternalPage(BPlusTreeInternalPage &ot
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int {
-  for (int i = 1; i < GetSize(); i++) {
-    if (comparator(key, KeyAt(i)) < 0) {
-      return i - 1;
-    }
-  }
-  return GetSize() - 1;
+  BUSTUB_ASSERT(GetSize() > 1, "internal_size should bigger than 1");  // 内部节点肯定不为空
+  auto comp = [&comparator](const KeyType &k1, const KeyType &k2) { return comparator(k1, k2) < 0; };
+  auto ptr = std::upper_bound(key_array_ + 1, key_array_ + GetSize(), key, comp);
+  return ptr - key_array_ - 1;
 }
 
 INDEX_TEMPLATE_ARGUMENTS

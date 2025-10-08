@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <sstream>
 
 #include "common/exception.h"
@@ -99,16 +100,11 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator)
     -> bool {
   BUSTUB_ASSERT(!IsFull(), "leaf is full");
-  int pos = 0;
-  for (int i = 0; i < GetSize(); i++) {
-    int comp = comparator(key_array_[i], key);
-    if (comp < 0) {
-      ++pos;
-    } else if (comp == 0) {
-      return false;
-    } else {
-      break;
-    }
+
+  int pos = SearchKeyIndex(key, comparator);
+  // 如果已经存在，则无法插入
+  if (pos < GetSize() && comparator(key_array_[pos], key) == 0) {
+    return false;
   }
 
   // 移动
@@ -194,19 +190,13 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_root) -> bool {
   // TODO(optimize) 优化为二分查找
   // 1. 查找删除的key
-  int pos = -1;
-  for (int i = 0; i < GetSize(); i++) {
-    if (comparator(key_array_[i], key) == 0) {
-      pos = i;
-      break;
-    }
-  }
-
-  // 2. 找不到也返回true
-  if (pos == -1) {
+  int pos = SearchKeyIndex(key, comparator);
+  // 找不到，返回true
+  if (pos == GetSize() || comparator(key_array_[pos], key) != 0) {
     return true;
   }
 
+  // 2. 保证key数量大于一半
   int min_size = (GetMaxSize() + 1) / 2;
   if (!is_root && GetSize() <= min_size) {
     return false;
@@ -237,12 +227,9 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CombinePage(BPlusTreeLeafPage &other) {
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int {
-  for (int i = 0; i < GetSize(); i++) {
-    if (comparator(key, KeyAt(i)) <= 0) {
-      return i;
-    }
-  }
-  return -1;
+  auto comp = [&comparator](const KeyType &k1, const KeyType &k2) { return comparator(k1, k2) < 0; };
+  auto ptr = std::lower_bound(key_array_, key_array_ + GetSize(), key, comp);
+  return ptr - key_array_;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;

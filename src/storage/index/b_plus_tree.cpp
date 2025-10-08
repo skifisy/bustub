@@ -145,17 +145,10 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   BUSTUB_ASSERT(leaf->IsLeafPage() == true, "is not leaf page");
   // 3.1.1 叶子节点没满，直接插入节点
   int pos = leaf->SearchKeyIndex(key, comparator_);
-  if (pos != -1) {
+  if (pos != leaf->GetSize()) {
+    // 如果key已在leaf中，直接返回
     if (comparator_(leaf->KeyAt(pos), key) == 0) {
       return false;
-    }
-  }
-  if (pos == -1) {
-    if (leaf->GetSize() == 0) {
-      pos = 0;
-    } else {
-      BUSTUB_ASSERT(comparator_(leaf->KeyAt(0), key) < 0, "error");
-      pos = leaf->GetSize();
     }
   }
   if (!leaf->IsFull()) {
@@ -503,7 +496,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   }
   auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
   int pos = leaf->SearchKeyIndex(key, comparator_);
-  if (pos == -1) {
+  if (pos == leaf->GetSize()) {
     return INDEXITERATOR_TYPE();
   }
   // 读锁提升为写锁

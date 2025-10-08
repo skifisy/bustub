@@ -14,6 +14,7 @@
 #include <cstdio>
 
 #include "buffer/buffer_pool_manager.h"
+#include "common/config.h"
 #include "gtest/gtest.h"
 #include "storage/disk/disk_manager_memory.h"
 #include "storage/index/b_plus_tree.h"
@@ -22,6 +23,69 @@
 namespace bustub {
 
 using bustub::DiskManagerUnlimitedMemory;
+
+TEST(BPlusTreeTests, LeafInsertTest) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+  using LeafType = BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
+  GenericKey<8> index_key;
+  RID rid;
+  char buffer[BUSTUB_PAGE_SIZE];
+  auto leaf = reinterpret_cast<LeafType *>(buffer);
+  leaf->Init(20);
+  std::vector<int64_t> keys = {1, 2, 3, 4, 5};
+  for (auto key : keys) {
+    // slot_num 为低32位，page_id 为高32位 = 0
+    int64_t value = key & 0xFFFFFFFF;
+    rid.Set(static_cast<int32_t>(key >> 32), value);
+    index_key.SetFromInteger(key);
+    leaf->InsertKeyValue(index_key, rid, comparator);
+  }
+  index_key.SetFromInteger(3);
+  int pos = leaf->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 2);
+  index_key.SetFromInteger(-1);
+  pos = leaf->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 0);
+  index_key.SetFromInteger(50);
+  pos = leaf->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 5);
+}
+
+TEST(BPlusTreeTests, InternalInsertTest) {
+  // create KeyComparator and index schema
+  auto key_schema = ParseCreateStatement("a bigint");
+  GenericComparator<8> comparator(key_schema.get());
+  using InternalType = BPlusTreeInternalPage<GenericKey<8>, page_id_t, GenericComparator<8>>;
+  GenericKey<8> index_key;
+  char buffer[BUSTUB_PAGE_SIZE];
+  auto internal = reinterpret_cast<InternalType *>(buffer);
+  internal->Init(20);
+  internal->SetSize(2);
+  index_key.SetFromInteger(0);
+  internal->SetKeyAt(0, index_key);
+  index_key.SetFromInteger(1);
+  internal->SetKeyAt(1, index_key);
+  std::vector<int64_t> keys = {2, 3, 4, 5};
+  for (auto key : keys) {
+    index_key.SetFromInteger(key);
+    internal->InsertKeyValue(index_key, key, comparator);
+  }
+  std::cout << internal->ToString() << std::endl;
+  index_key.SetFromInteger(3);
+  int pos = internal->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 3);
+  index_key.SetFromInteger(-1);
+  pos = internal->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 0);
+  index_key.SetFromInteger(1);
+  pos = internal->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 1);
+  index_key.SetFromInteger(50);
+  pos = internal->SearchKeyIndex(index_key, comparator);
+  ASSERT_EQ(pos, 5);
+}
 
 TEST(BPlusTreeTests, BasicInsertTest) {
   // create KeyComparator and index schema

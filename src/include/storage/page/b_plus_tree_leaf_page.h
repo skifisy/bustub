@@ -104,6 +104,11 @@ class BPlusTreeLeafPage : public BPlusTreePage {
    * @brief 查找第一个大于等于key的位置
    * @return 返回index，找不到则返回-1
    */
+
+  /**
+   * @brief 查找第一个大于等于key的位置
+   * @return 返回index，找不到则返回Getsize()，也就是end的位置
+   */
   auto SearchKeyIndex(const KeyType &key, KeyComparator &comparator) const -> int;
 
   auto InsertKeyValueByIndex(const KeyType &key, const ValueType &value, int pos, KeyComparator &comparator) -> bool;
