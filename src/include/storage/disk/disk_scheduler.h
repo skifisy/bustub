@@ -13,6 +13,7 @@
 #pragma once
 
 #include <future>  // NOLINT
+#include <memory>
 #include <optional>
 #include <thread>  // NOLINT
 
@@ -20,6 +21,8 @@
 #include "storage/disk/disk_manager.h"
 
 namespace bustub {
+
+class FrameHeader;  // 前向声明
 
 /**
  * @brief Represents a Write or Read request for the DiskManager to execute.
@@ -40,6 +43,7 @@ struct DiskRequest {
 
   /** Callback used to signal to the request issuer when the request has been completed. */
   std::promise<bool> callback_;
+  std::shared_ptr<FrameHeader> frame_ = nullptr;
 };
 
 /**
@@ -51,7 +55,7 @@ struct DiskRequest {
  */
 class DiskScheduler {
  public:
-  explicit DiskScheduler(DiskManager *disk_manager, int thread_num = 1);
+  explicit DiskScheduler(DiskManager *disk_manager, int thread_num = 16);
   ~DiskScheduler();
 
   /**

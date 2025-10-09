@@ -13,6 +13,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <list>
 #include <memory>
 #include <optional>
@@ -62,6 +63,7 @@ class FrameHeader {
   friend class BufferPoolManager;
   friend class ReadPageGuard;
   friend class WritePageGuard;
+  friend class DiskScheduler;
 
  public:
   explicit FrameHeader(frame_id_t frame_id);
@@ -98,6 +100,11 @@ class FrameHeader {
    * currently storing. This might allow you to skip searching for the corresponding (page ID, frame ID) pair somewhere
    * else in the buffer pool manager...
    */
+  bool write_back_done_{true};     // 是否已经写回到磁盘
+  bool has_read_launched_{false};  // 是否已经发起读操作
+  bool has_read_done_{false};      // 是否已经完成了读入
+  std::condition_variable cv_;
+  std::mutex mutex_io_;  // io锁
 };
 
 /**

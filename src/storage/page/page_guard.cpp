@@ -15,6 +15,8 @@
 #include <mutex>
 #include <shared_mutex>
 #include <utility>
+#include "common/config.h"
+#include "common/logger.h"
 #include "storage/disk/disk_scheduler.h"
 
 namespace bustub {
@@ -109,6 +111,7 @@ auto ReadPageGuard::GetPageId() const -> page_id_t {
  */
 auto ReadPageGuard::GetData() const -> const char * {
   BUSTUB_ENSURE(is_valid_, "tried to use an invalid read guard");
+  // LOG_DEBUG("read_guard getdata: frame_id %d, page_id %d", frame_->frame_id_, frame_->page_id_);
   return frame_->GetData();
 }
 
@@ -246,6 +249,7 @@ auto WritePageGuard::GetPageId() const -> page_id_t {
  */
 auto WritePageGuard::GetData() const -> const char * {
   BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
+  // LOG_DEBUG("write_guard getdata: frame_id %d, page_id %d", frame_->frame_id_, frame_->page_id_);
   return frame_->GetData();
 }
 
@@ -254,6 +258,7 @@ auto WritePageGuard::GetData() const -> const char * {
  */
 auto WritePageGuard::GetDataMut() -> char * {
   BUSTUB_ENSURE(is_valid_, "tried to use an invalid write guard");
+  // LOG_DEBUG("write_guard GetDataMut: frame_id %d, page_id %d", frame_->frame_id_, frame_->page_id_);
   return frame_->GetDataMut();
 }
 

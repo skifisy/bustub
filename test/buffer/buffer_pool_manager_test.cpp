@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <deque>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 #include "buffer/buffer_pool_manager.h"
@@ -71,6 +72,54 @@ TEST(BufferPoolManagerTest, VeryBasicTest) {
   }
 
   ASSERT_TRUE(bpm->DeletePage(pid));
+}
+
+TEST(BufferPoolManagerTest, OverflowTest) {
+  auto disk_manager = std::make_shared<DiskManager>(db_fname);
+  auto bpm = std::make_shared<BufferPoolManager>(1, disk_manager.get(), K_DIST);
+
+  page_id_t pid = bpm->NewPage();
+  std::vector<page_id_t> pids;
+  pids.reserve(10);
+  for (int i = 0; i < 10; i++) {
+    pid = bpm->NewPage();
+    pids.emplace_back(pid);
+    auto guard = bpm->WritePage(pid);
+    char *data = guard.GetDataMut();
+    std::string pid_str = std::to_string(pid);
+    snprintf(data, pid_str.size() + 1, "%s", pid_str.c_str());
+  }
+
+  for (auto pid : pids) {
+    {
+      auto guard = bpm->ReadPage(pid);
+      const char *data = guard.GetData();
+      std::string pid_str = std::to_string(pid);
+      EXPECT_STREQ(data, pid_str.c_str());
+    }
+    {
+      auto guard = bpm->ReadPage(pid);
+      const char *data = guard.GetData();
+      std::string pid_str = std::to_string(pid);
+      EXPECT_STREQ(data, pid_str.c_str());
+    }
+  }
+
+  page_id_t p1 = pids[0];
+  page_id_t p2 = pids[1];
+  char str[] = "Hello, world!";
+  {
+    auto guard1 = bpm->WritePage(p1);
+    char *data = guard1.GetDataMut();
+    snprintf(data, sizeof(str), "%s", str);
+  }
+  { auto guard2 = bpm->ReadPage(p2); }
+  ASSERT_TRUE(bpm->DeletePage(p2));
+  {
+    auto guard1 = bpm->ReadPage(p1);
+    const char *data = guard1.GetData();
+    EXPECT_STREQ(data, str);
+  }
 }
 
 TEST(BufferPoolManagerTest, PagePinEasyTest) {
