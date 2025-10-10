@@ -63,8 +63,9 @@ void DiskScheduler::StartWorkerThread(int thread_id) {
         std::lock_guard<std::mutex> lock(frame->mutex_io_);
         frame->write_back_done_ = true;
         frame->cv_.notify_all();
+      } else {
+        request->callback_.set_value(true);
       }
-      request->callback_.set_value(true);
     } else {
       // 读数据
       disk_manager_->ReadPage(request->page_id_, request->data_);
@@ -72,8 +73,9 @@ void DiskScheduler::StartWorkerThread(int thread_id) {
         std::lock_guard<std::mutex> lock(frame->mutex_io_);
         frame->has_read_done_ = true;
         frame->cv_.notify_all();
+      } else {
+        request->callback_.set_value(true);
       }
-      request->callback_.set_value(true);
     }
   }
 }
