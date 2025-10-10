@@ -449,21 +449,28 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   ReadPageGuard header_guard = bpm_->ReadPage(header_page_id_);
   auto header = header_guard.As<BPlusTreeHeaderPage>();
-  if (header->root_page_id_ != INVALID_PAGE_ID) {
-    // todo: 不能用read_page吗？
-    // 找到最左叶子节点
-    page_id_t cur_page_id = header->root_page_id_;
-
-    WritePageGuard guard = bpm_->WritePage(cur_page_id);
-    auto page = guard.As<BPlusTreePage>();
-    while (!page->IsLeafPage()) {
-      auto internal_page = guard.As<InternalPage>();
-      guard = bpm_->WritePage(internal_page->ValueAt(0));
-      page = guard.As<BPlusTreePage>();
-    }
-    return INDEXITERATOR_TYPE(std::move(guard), 0, bpm_);
+  if (header->root_page_id_ == INVALID_PAGE_ID) {
+    return INDEXITERATOR_TYPE();
   }
-  return INDEXITERATOR_TYPE();
+  page_id_t cur_page_id = header->root_page_id_;
+  // 不断向左寻找节点，直到遇到叶子节点
+  // 迭代时，应当持有叶子节点
+  ReadPageGuard cur = bpm_->ReadPage(cur_page_id);
+  ReadPageGuard parent = std::move(header_guard);
+  auto cur_node = cur.As<BPlusTreePage>();
+  while (!cur_node->IsLeafPage()) {
+    auto internal_page = reinterpret_cast<const InternalPage *>(cur_node);
+    BUSTUB_ASSERT(internal_page->GetSize() > 0, "error");
+    cur_page_id = internal_page->ValueAt(0);
+    parent = std::move(cur);
+    cur = bpm_->ReadPage(cur_page_id);
+    cur_node = cur.As<BPlusTreePage>();
+  }
+  auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
+  BUSTUB_ASSERT(leaf->GetSize() > 0, "error");
+  // 读锁提升为写锁
+  cur.Drop();
+  return INDEXITERATOR_TYPE(bpm_->WritePage(cur_page_id), 0, bpm_);
 }
 
 /*
