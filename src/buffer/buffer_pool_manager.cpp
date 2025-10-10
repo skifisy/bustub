@@ -259,7 +259,6 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
   }
   // 后续访问，需要等待page读完
   frame->cv_.wait(lock, [&frame]() { return frame->has_read_done_; });
-  // LOG_DEBUG("write page_id: %d, frame_id: %d", page_id, frame->frame_id_);
 
   return WritePageGuard(page_id, frames_[frame_id.value()], replacer_, bpm_latch_);
 }
@@ -309,7 +308,6 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
   }
   // 后续访问，需要等待page读完
   frame->cv_.wait(lock, [&frame]() { return frame->has_read_done_; });
-  // LOG_DEBUG("read page_id: %d, frame_id: %d", page_id, frame->frame_id_);
 
   return ReadPageGuard(page_id, frames_[frame_id.value()], replacer_, bpm_latch_);
 }
@@ -381,7 +379,6 @@ auto BufferPoolManager::ReadPage(page_id_t page_id, AccessType access_type) -> R
  * @return `false` if the page could not be found in the page table, otherwise `true`.
  */
 auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
-  // LOG_DEBUG("flushpage %d", page_id);
   auto it = page_table_.find(page_id);
   if (it == page_table_.end()) {
     return false;
@@ -418,7 +415,6 @@ void BufferPoolManager::FlushAllPages() {
   future_vec.reserve(page_table_.size());
   for (auto &it : page_table_) {
     frame_id_t frame_id = it.second;
-    // LOG_DEBUG("flush allpage: pageid %d", it.first);
     auto &frame = frames_[frame_id];
     DiskRequest r = {true, frame->GetDataMut(), it.first, {}};
     future_vec.emplace_back(frame, r.callback_.get_future());

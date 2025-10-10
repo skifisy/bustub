@@ -30,68 +30,93 @@ auto LRUKReplacer::Evict() -> std::optional<frame_id_t> {
     return std::nullopt;
   }
 
-  auto evict_from_list = [this](LRUKList &list) -> std::optional<frame_id_t> {
-    for (LRUKNode *node = list.Back(); node != list.Head(); node = node->prev_) {
-      if (node->is_evictable_) {
-        frame_id_t fid = node->fid_;
-        list.Erase(node);        // 从队列中删除
-        node_store_.erase(fid);  // 从memory中删除
-        --curr_size_;
-        return fid;
+  frame_id_t evict_id = INVALID_FRAME_ID;
+  size_t min_timestamp = -1;
+  LRUKNode *node = nullptr;
+  // 1. 优先剔除history_list_
+  for (node = history_list_.Back(); node != history_list_.Head(); node = node->prev_) {
+    BUSTUB_ASSERT(node->fid_ != INVALID_FRAME_ID, "error");
+    if (node->is_evictable_) {
+      evict_id = node->fid_;
+      BUSTUB_ASSERT(node->queue_type_ == QueueType::History, "error");
+      history_list_.Erase(node);
+      break;
+    }
+  }
+
+  // 2. 然后剔除cache_list
+  if (evict_id == INVALID_FRAME_ID) {
+    for (LRUKNode *n = cache_list_.Back(); n != cache_list_.Head(); n = n->prev_) {
+      BUSTUB_ASSERT(n->fid_ != INVALID_FRAME_ID, "error");
+      if (!n->is_evictable_) {
+        continue;
+      }
+      if (n->last_visit_ < min_timestamp) {
+        min_timestamp = n->last_visit_;
+        evict_id = n->fid_;
+        node = n;
       }
     }
-    return std::nullopt;
-  };
-
-  // 1. 优先剔除history_list_
-  if (auto fid = evict_from_list(history_list_)) {
-    BUSTUB_ASSERT(fid.value() != -1, "frame id is invalid");
-    return fid;
-  }
-  // 2. 然后剔除cache_list
-  if (auto fid = evict_from_list(cache_list_)) {
-    BUSTUB_ASSERT(fid.value() != -1, "frame id is invalid");
-    return fid;
+    if (evict_id == INVALID_FRAME_ID) {
+      return std::nullopt;
+    }
+    if (min_timestamp != static_cast<size_t>(-1)) {
+      BUSTUB_ASSERT(node->queue_type_ == QueueType::Cache, "error");
+      cache_list_.Erase(node);
+    }
   }
 
-  return std::nullopt;  // 走不到这里
+  node->k_ = 0;
+  node->is_evictable_ = false;
+  node->last_visit_ = 0;
+  --curr_size_;
+  node->next_ = nullptr;
+  node->prev_ = nullptr;
+  node->queue_type_ = QueueType::None;
+  return evict_id;
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType access_type) {
-  // frame > replacer_size_，抛出异常
-  // 可以使用BUSTUB_ASSERT
+  BUSTUB_ASSERT(frame_id != INVALID_FRAME_ID, "error");
   std::lock_guard<std::mutex> lock(latch_);
   auto it = node_store_.find(frame_id);
   if (it == node_store_.end()) {
     // 插入
-    LRUKNode node{{}, 1, frame_id, false};
+    LRUKNode node{{}, 1, frame_id, false, QueueType::History, 0, nullptr, nullptr};
     node_store_.emplace(frame_id, std::move(node));
     BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1");
     history_list_.PushFront(&node_store_[frame_id]);
-    // ! record的时候如果node不存在，插入node，并让cur_size增加
-  } else if (it->second.prev_ == nullptr) {
-    // 加入store，但是并没有进入history队列，也是首次访问
-    auto &node = it->second;
-    BUSTUB_ASSERT(node.k_ == 0, "first visit, node k should be 0");
-    ++node.k_;
-    history_list_.PushFront(&node);
-    BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
+
+    // ! RecordAccess的时候如果node不存在，插入node，并让cur_size增加
   } else {
-    // 更新访问次数
     auto &node = it->second;
-    ++node.k_;
-    if (node.k_ == k_) {
-      // 次数等于k时，移动到cache_list
-      history_list_.Erase(&node);
-      cache_list_.PushFront(&node);
-    } else if (node.k_ < k_) {
-      // history_list使用FIFO策略
+    if (node.queue_type_ == QueueType::None) {
+      // 加入store，但是并没有进入history队列，也是首次访问
+      BUSTUB_ASSERT(node.k_ == 0, "first visit, node k should be 0");
+      ++node.k_;
+      history_list_.PushFront(&node);
+      node.queue_type_ = QueueType::History;
+      BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
     } else {
-      // 访问次数大于k_次，移动到最前
-      cache_list_.Erase(&node);
-      cache_list_.PushFront(&node);
+      // 更新访问次数
+      ++node.k_;
+      if (node.k_ == k_) {
+        BUSTUB_ASSERT(node.queue_type_ == QueueType::History, "error");
+        // 次数等于k时，移动到cache_list
+        history_list_.Erase(&node);
+        cache_list_.PushFront(&node);
+        node.queue_type_ = QueueType::Cache;
+      }
+      // update: 不再维护cache_list的顺序
+      // else if (node.k_ > k_){
+      //   // 访问次数大于k_次，移动到最前
+      //   cache_list_.Erase(&node);
+      //   cache_list_.PushFront(&node);
+      // }
     }
   }
+  LRUKNode &node = node_store_[frame_id];
+  node.last_visit_ = current_timestamp_++;
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
@@ -128,9 +153,9 @@ void LRUKReplacer::Remove(frame_id_t frame_id) {
   auto &node = it->second;
   BUSTUB_ASSERT(node.is_evictable_, "frame is not evictable");
   BUSTUB_ASSERT(node.next_ != nullptr, "LRUKNode is not in history/cache list!");
-  if (node.k_ >= k_) {
+  if (node.queue_type_ == QueueType::Cache) {
     cache_list_.Erase(&node);
-  } else {
+  } else if (node.queue_type_ == QueueType::History) {
     history_list_.Erase(&node);
   }
   node_store_.erase(it);

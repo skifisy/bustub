@@ -197,6 +197,7 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   new_root->SetKeyAt(1, new_key);
   new_root->SetValueAt(0, ctx.root_page_id_);
   new_root->SetValueAt(1, new_value);
+  // 可能是内部节点或叶子节点上传
   if (parent == nullptr) {
     new_root->SetKeyAt(0, leaf->KeyAt(0));
   } else {

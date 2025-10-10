@@ -18,6 +18,7 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -28,6 +29,8 @@ namespace bustub {
 
 enum class AccessType { Unknown = 0, Lookup, Scan, Index };
 
+enum class QueueType { None = 0, History, Cache };
+
 class LRUKNode {
  public:
   /** History of last seen K timestamps of this page. Least recent timestamp stored in front. */
@@ -37,6 +40,8 @@ class LRUKNode {
   [[maybe_unused]] size_t k_{0};
   [[maybe_unused]] frame_id_t fid_{-1};
   [[maybe_unused]] bool is_evictable_{false};
+  QueueType queue_type_{QueueType::None};
+  size_t last_visit_{0};  // 最后一次访问的时间戳
   LRUKNode *prev_{nullptr};
   LRUKNode *next_{nullptr};
 };
@@ -93,6 +98,15 @@ class LRUKList {
   auto Back() -> LRUKNode * { return head_.prev_; }
 
   auto Head() -> LRUKNode * { return &head_; }
+
+  auto ToString() -> std::string {
+    std::string str = "list: ";
+    for (LRUKNode *cur = Back(); cur != Head(); cur = cur->prev_) {
+      str.append(std::to_string(cur->fid_));
+      str.append(", ");
+    }
+    return str;
+  }
 
  private:
   LRUKNode head_;
@@ -210,7 +224,7 @@ class LRUKReplacer {
    */
   auto Size() -> size_t;
 
- private:
+ public:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
   std::unordered_map<frame_id_t, LRUKNode> node_store_;
