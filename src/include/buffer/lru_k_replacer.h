@@ -33,17 +33,27 @@ enum class QueueType { None = 0, History, Cache };
 
 class LRUKNode {
  public:
+  void Reset() {
+    k_ = 0;
+    fid_ = INVALID_FRAME_ID;
+    is_evictable_ = false;
+    last_visit_ = 0;
+    prev_ = nullptr;
+    next_ = nullptr;
+    queue_type_ = QueueType::None;
+  }
+
   /** History of last seen K timestamps of this page. Least recent timestamp stored in front. */
   // Remove maybe_unused if you start using them. Feel free to change the member variables as you want.
 
-  [[maybe_unused]] std::list<size_t> history_;  // 最近k次访问的时间戳
-  [[maybe_unused]] size_t k_{0};
-  [[maybe_unused]] frame_id_t fid_{-1};
+  [[maybe_unused]] std::list<size_t> history_;         // 最近k次访问的时间戳
+  [[maybe_unused]] size_t k_{0};                       // 当前node的访问次数
+  [[maybe_unused]] frame_id_t fid_{INVALID_FRAME_ID};  // 维护fid_，从list淘汰需要id值
   [[maybe_unused]] bool is_evictable_{false};
-  QueueType queue_type_{QueueType::None};
-  size_t last_visit_{0};  // 最后一次访问的时间戳
-  LRUKNode *prev_{nullptr};
-  LRUKNode *next_{nullptr};
+  [[maybe_unused]] QueueType queue_type_{QueueType::None};
+  [[maybe_unused]] size_t last_visit_{0};  // 最后一次访问的时间戳
+  [[maybe_unused]] LRUKNode *prev_{nullptr};
+  [[maybe_unused]] LRUKNode *next_{nullptr};
 };
 
 class LRUKList {
@@ -142,7 +152,7 @@ class LRUKReplacer {
    *
    * @brief Destroys the LRUReplacer.
    */
-  ~LRUKReplacer() = default;
+  ~LRUKReplacer();
 
   /**
    * TODO(P1): Add implementation
@@ -227,13 +237,13 @@ class LRUKReplacer {
  public:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  std::unordered_map<frame_id_t, LRUKNode> node_store_;
+  LRUKNode *node_store_;  // node数组，frame_id->LRUKNode
   LRUKList history_list_;
   LRUKList cache_list_;
-  [[maybe_unused]] size_t current_timestamp_{0};
+  size_t current_timestamp_{0};
   size_t curr_size_{0};         // 当前可以被evict的frame
   const size_t replacer_size_;  // frame总容量
-  size_t k_;
+  size_t k_;                    // k值参数
   std::mutex latch_;
 };
 

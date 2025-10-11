@@ -22,7 +22,11 @@
 
 namespace bustub {
 
-LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_frames), k_(k) {}
+LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_frames), k_(k) {
+  node_store_ = new LRUKNode[num_frames];
+}
+
+LRUKReplacer::~LRUKReplacer() { delete[] node_store_; }
 
 auto LRUKReplacer::Evict() -> std::optional<frame_id_t> {
   std::lock_guard<std::mutex> lock(latch_);
@@ -65,38 +69,32 @@ auto LRUKReplacer::Evict() -> std::optional<frame_id_t> {
       cache_list_.Erase(node);
     }
   }
-
-  node->k_ = 0;
-  node->is_evictable_ = false;
-  node->last_visit_ = 0;
+  node->Reset();
   --curr_size_;
-  node->next_ = nullptr;
-  node->prev_ = nullptr;
-  node->queue_type_ = QueueType::None;
   return evict_id;
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType access_type) {
+  BUSTUB_ASSERT(frame_id >= 0 && frame_id < static_cast<frame_id_t>(replacer_size_), "out of bounds");
   BUSTUB_ASSERT(frame_id != INVALID_FRAME_ID, "error");
   std::lock_guard<std::mutex> lock(latch_);
-  auto it = node_store_.find(frame_id);
-  if (it == node_store_.end()) {
+  LRUKNode &node = node_store_[frame_id];
+
+  if (node.fid_ == INVALID_FRAME_ID) {
     // 插入
-    LRUKNode node{{}, 1, frame_id, false, QueueType::History, 0, nullptr, nullptr};
-    node_store_.emplace(frame_id, std::move(node));
+    node = {{}, 1, frame_id, false, QueueType::History, 0, nullptr, nullptr};
     BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1");
-    history_list_.PushFront(&node_store_[frame_id]);
+    history_list_.PushFront(&node);
 
     // ! RecordAccess的时候如果node不存在，插入node，并让cur_size增加
   } else {
-    auto &node = it->second;
     if (node.queue_type_ == QueueType::None) {
       // 加入store，但是并没有进入history队列，也是首次访问
       BUSTUB_ASSERT(node.k_ == 0, "first visit, node k should be 0");
       ++node.k_;
+      BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
       history_list_.PushFront(&node);
       node.queue_type_ = QueueType::History;
-      BUSTUB_ASSERT(k_ > 1, "LRUK k should bigger than 1!");
     } else {
       // 更新访问次数
       ++node.k_;
@@ -115,25 +113,21 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
       // }
     }
   }
-  LRUKNode &node = node_store_[frame_id];
   node.last_visit_ = current_timestamp_++;
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
+  BUSTUB_ASSERT(frame_id >= 0 && frame_id < static_cast<frame_id_t>(replacer_size_), "out of bounds");
   std::lock_guard<std::mutex> lock(latch_);
-  auto it = node_store_.find(frame_id);
-  // BUSTUB_ASSERT(it != node_store_.end(), "can't find frame by id");
-  // TODO(frameid invalid): frame_id什么时候为invalid？
-  BUSTUB_ASSERT(static_cast<unsigned long>(frame_id) < replacer_size_, "frame_id is too big");
-  if (it == node_store_.end()) {
-    // 如果不存在该node，那么插入到node_store_中
-    LRUKNode node;
+  LRUKNode &node = node_store_[frame_id];
+
+  // 1. 如果该node还是无效
+  if (node.fid_ == INVALID_FRAME_ID) {
     node.is_evictable_ = set_evictable;
     node.fid_ = frame_id;
-    node_store_.emplace(frame_id, std::move(node));
     return;
   }
-  auto &node = it->second;
+  // 2. 有效的node（已经在使用的frame）
   if (node.is_evictable_ != set_evictable) {
     if (set_evictable) {
       ++curr_size_;
@@ -145,20 +139,22 @@ void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) {
+  BUSTUB_ASSERT(frame_id >= 0 && frame_id < static_cast<frame_id_t>(replacer_size_), "out of bounds");
   std::lock_guard<std::mutex> lock(latch_);
-  auto it = node_store_.find(frame_id);
-  if (it == node_store_.end()) {
+  auto &node = node_store_[frame_id];
+  // 1. 不存在该node
+  if (node.fid_ == INVALID_FRAME_ID) {
     return;
   }
-  auto &node = it->second;
   BUSTUB_ASSERT(node.is_evictable_, "frame is not evictable");
   BUSTUB_ASSERT(node.next_ != nullptr, "LRUKNode is not in history/cache list!");
+  // 从队列中删除该node
   if (node.queue_type_ == QueueType::Cache) {
     cache_list_.Erase(&node);
   } else if (node.queue_type_ == QueueType::History) {
     history_list_.Erase(&node);
   }
-  node_store_.erase(it);
+  node.Reset();
   --curr_size_;
 }
 
