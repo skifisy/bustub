@@ -244,22 +244,6 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
   if (!frame_id) {
     return std::nullopt;
   }
-
-  // 等待读写（写在大锁外部）
-  auto &frame = frames_[frame_id.value()];
-  std::unique_lock<std::mutex> lock(frame->mutex_io_);
-  // 等待当前page写回
-  frame->cv_.wait(lock, [&frame]() { return frame->write_back_done_; });
-  // 首次访问，需要读入page
-  if (!frame->has_read_launched_) {
-    DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
-    disk_scheduler_->Schedule(std::move(r));
-    frame->is_dirty_ = false;
-    frame->has_read_launched_ = true;
-  }
-  // 后续访问，需要等待page读完
-  frame->cv_.wait(lock, [&frame]() { return frame->has_read_done_; });
-
   return WritePageGuard(page_id, frames_[frame_id.value()], replacer_, bpm_latch_);
 }
 
@@ -294,21 +278,6 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
   if (!frame_id) {
     return std::nullopt;
   }
-  // 等待读写（写在大锁外部）
-  auto &frame = frames_[frame_id.value()];
-  std::unique_lock<std::mutex> lock(frame->mutex_io_);
-  // 等待当前page写回
-  frame->cv_.wait(lock, [&frame]() { return frame->write_back_done_; });
-  // 首次访问，需要读入page
-  if (!frame->has_read_launched_) {
-    DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
-    disk_scheduler_->Schedule(std::move(r));
-    frame->is_dirty_ = false;
-    frame->has_read_launched_ = true;
-  }
-  // 后续访问，需要等待page读完
-  frame->cv_.wait(lock, [&frame]() { return frame->has_read_done_; });
-
   return ReadPageGuard(page_id, frames_[frame_id.value()], replacer_, bpm_latch_);
 }
 
@@ -460,10 +429,11 @@ auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> 
 }
 
 auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t> {
-  std::lock_guard<std::mutex> lock(*bpm_latch_);
+  std::unique_lock<std::mutex> lock(*bpm_latch_);
 
   frame_id_t frame_id = -1;
-
+  page_id_t page_id_before = INVALID_PAGE_ID;
+  bool is_dirty = false;
   // 1. 页表中是否存在该page
   if (auto it = page_table_.find(page_id); it != page_table_.end()) {
     frame_id = it->second;
@@ -472,7 +442,6 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     frame_id = free_frames_.back();
     free_frames_.pop_back();
     page_table_[page_id] = frame_id;
-    // TODO(question) 是否应该在此处就schedule(read)?
     frames_[frame_id]->page_id_ = page_id;
     BUSTUB_ASSERT(!frames_[frame_id]->has_read_done_, "error");
     BUSTUB_ASSERT(!frames_[frame_id]->has_read_launched_, "error");
@@ -485,7 +454,7 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     }
     frame_id = frame_id_opt.value();
     auto &frame = frames_[frame_id];
-    page_id_t page_id_before = frame->page_id_;
+    page_id_before = frame->page_id_;
     BUSTUB_ASSERT(frame->has_read_done_, "error");  // evict前，前面的page已经read完毕
     BUSTUB_ASSERT(frame->has_read_launched_, "error");
     BUSTUB_ASSERT(frame->write_back_done_, "error");
@@ -493,9 +462,15 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
     frame->has_read_launched_ = false;
     frame->has_read_done_ = false;
     if (frame->is_dirty_) {
+      is_dirty = true;
+      frame->is_dirty_ = false;
       frame->write_back_done_ = false;
-      DiskRequest r = {true, frame->GetDataMut(), page_id_before, {}, frame};
-      disk_scheduler_->Schedule(std::move(r));
+      std::lock_guard<std::mutex> dirty_lock(dirty_latch_);
+      // frame->write_back_done_ = false;
+      // DiskRequest r = {true, frame->GetDataMut(), page_id_before, {}, frame};
+      // disk_scheduler_->Schedule(std::move(r));
+      dirty_pages_.emplace(page_id_before);
+      BUSTUB_ASSERT(dirty_pages_.count(page_id_before) != 0, "error");
     }
     page_table_.erase(page_id_before);
     page_table_[page_id] = frame_id;
@@ -509,6 +484,61 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
   frame->pin_count_.fetch_add(1);
   replacer_->RecordAccess(frame_id);
   replacer_->SetEvictable(frame_id, false);
+
+  lock.unlock();
+
+  // 处理IO逻辑
+  if (is_dirty) {
+    // 1. 写回脏页
+    BUSTUB_ASSERT(page_id_before != INVALID_FRAME_ID, "error");
+    DiskRequest r = {true, frame->GetDataMut(), page_id_before, {}, frame};
+    BUSTUB_ASSERT(!frame->write_back_done_, "error");
+    disk_scheduler_->Schedule(std::move(r));
+    {
+      std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
+      frame->cv_.wait(io_lock, [&frame]() { return frame->write_back_done_; });
+
+      // 2. 发起读入
+      if (!frame->has_read_launched_) {
+        BUSTUB_ASSERT(frame->write_back_done_, "error");
+        DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
+        disk_scheduler_->Schedule(std::move(r));
+        frame->has_read_launched_ = true;
+      }
+    }
+    // 3. 唤醒等待脏页写回的线程
+    {
+      std::unique_lock<std::mutex> dirty_lock(dirty_latch_);
+      dirty_pages_.erase(page_id_before);
+      dirty_cv_.notify_all();
+    }
+    // 4. 阻塞等待frame读入
+    std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
+    frame->cv_.wait(io_lock, [&frame]() { return frame->has_read_done_; });
+  } else {
+    // 1. 非脏页，该page也可能正在写回
+    {
+      std::unique_lock<std::mutex> dirty_lock(dirty_latch_);
+      dirty_cv_.wait(dirty_lock, [this, &page_id]() { return dirty_pages_.count(page_id) == 0; });
+    }
+    {
+      std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
+      // 可能这个frame是刚刚evict下来的，所以需要被写回，因此这里还需要等待write_back
+      frame->cv_.wait(io_lock, [&frame]() { return frame->write_back_done_; });
+
+      // 2. 发起读入
+      if (!frame->has_read_launched_) {
+        BUSTUB_ASSERT(!frame->is_dirty_, "error");
+        BUSTUB_ASSERT(frame->write_back_done_, "error");
+        DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
+        disk_scheduler_->Schedule(std::move(r));
+        frame->has_read_launched_ = true;
+      }
+      // 3. 阻塞等待读入
+      frame->cv_.wait(io_lock, [&frame]() { return frame->has_read_done_; });
+    }
+  }
+
   return frame_id;
 }
 
