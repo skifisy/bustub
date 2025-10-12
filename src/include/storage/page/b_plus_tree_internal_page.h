@@ -56,6 +56,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
    */
   void Init(int max_size = INTERNAL_PAGE_SLOT_CNT);
 
+  auto GetMinSize() const -> int;
+
   /**
    * @param index The index of the key to get. Index must be non-zero.
    * @return Key at index

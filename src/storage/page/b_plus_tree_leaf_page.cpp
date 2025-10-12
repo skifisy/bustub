@@ -35,6 +35,9 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(int max_size) {
   next_page_id_ = -1;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetMinSize() const -> int { return std::max((GetMaxSize() + 1) / MIN_SIZE_P, 1); }
+
 /**
  * Helper methods to set/get next page id
  */

@@ -39,7 +39,7 @@ void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
  * Generally, min page size == max page size / 2
  * But whether you will take ceil() or floor() depends on your implementation
  */
-auto BPlusTreePage::GetMinSize() const -> int { return (max_size_ + 1) / 2; }
+// auto BPlusTreePage::GetMinSize() const -> int { return std::max((max_size_ + 1) / MIN_SIZE_P, 1); }
 
 auto BPlusTreePage::IsFull() const -> bool { return size_ >= max_size_; }
 

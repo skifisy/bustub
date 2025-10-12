@@ -60,6 +60,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
    * @param max_size Max size of the leaf node
    */
   void Init(int max_size = LEAF_PAGE_SLOT_CNT);
+  auto GetMinSize() const -> int;
 
   // Helper methods
   auto GetNextPageId() const -> page_id_t;

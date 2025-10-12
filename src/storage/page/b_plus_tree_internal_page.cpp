@@ -32,6 +32,10 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) {
   SetSize(0);
   SetMaxSize(max_size);
 }
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::GetMinSize() const -> int { return std::max((GetMaxSize() + 1) / MIN_SIZE_P, 2); }
+
 /*
  * Helper method to get/set the key associated with input "index" (a.k.a
  * array offset)

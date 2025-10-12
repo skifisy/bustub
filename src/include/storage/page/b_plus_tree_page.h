@@ -28,6 +28,8 @@ namespace bustub {
 // define page type enum
 enum class IndexPageType { INVALID_INDEX_PAGE = 0, LEAF_PAGE, INTERNAL_PAGE };
 
+constexpr int MIN_SIZE_P = 2;
+
 /**
  * Both internal and leaf page are inherited from this page.
  *
@@ -55,7 +57,7 @@ class BPlusTreePage {
 
   auto GetMaxSize() const -> int;
   void SetMaxSize(int max_size);
-  auto GetMinSize() const -> int;
+  // auto GetMinSize() const -> int;
 
   auto IsFull() const -> bool;
 

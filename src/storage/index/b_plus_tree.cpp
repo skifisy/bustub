@@ -117,9 +117,9 @@ void BPLUSTREE_TYPE::LeafSearchRead(const KeyType &key, Context &ctx) {
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool {
   // 优先尝试乐观插入
-  // if (InsertOptimistic(key, value)) {
-  //   return true;
-  // }
+  if (InsertOptimistic(key, value)) {
+    return true;
+  }
   // Declaration of context instance.
   Context ctx;
   // 1. 解析header
@@ -296,7 +296,7 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   }
   // 4.2 leaf节点key数量等于一半-1，从兄弟节点借一个条目，或者直接合并
   // leaf数量等于min值，就直接借条目
-  BUSTUB_ASSERT(leaf->GetSize() == (leaf->GetMaxSize() + 1) / 2, "error");
+  BUSTUB_ASSERT(leaf->GetSize() == leaf->GetMinSize(), "error");
   BUSTUB_ASSERT(leaf_guard.GetPageId() != root_id, "error");
   BUSTUB_ASSERT(!ctx.write_set_.empty(), "error");
   WritePageGuard parent_guard = std::move(ctx.write_set_.back());
