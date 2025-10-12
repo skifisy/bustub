@@ -11,6 +11,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdarg>
 #include <deque>
 #include <filesystem>
 #include <iostream>
@@ -27,6 +28,7 @@
 #include "storage/page/b_plus_tree_internal_page.h"
 #include "storage/page/b_plus_tree_leaf_page.h"
 #include "storage/page/page_guard.h"
+#include "type/value.h"
 
 namespace bustub {
 
@@ -128,6 +130,16 @@ class BPlusTree {
   void BatchOpsFromFile(const std::filesystem::path &file_name);
 
  private:
+  /**
+   * @brief 乐观插入
+   */
+  auto InsertOptimistic(const KeyType &key, const ValueType &value) -> bool;
+
+  /**
+   * @brief 乐观删除
+   */
+  auto RemoveOptimistic(const KeyType &key);
+
   void LeafSearchRead(const KeyType &key, Context &ctx);
   template <bool is_insert>
   void LeafSearch(const KeyType &key, Context &ctx);

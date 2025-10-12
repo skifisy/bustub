@@ -74,12 +74,12 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
   auto leaf = leaf_page.template As<LeafPage>();
 
   bool ret = false;
-  // TODO(optimize) 二分查找
   // result为数组，表示一个key可能有多个value
   // TODO(bug) 查找的内容必定在该block中吗？假设某个key超过了一个block的容量
-  for (int i = 0; i < leaf->GetSize(); i++) {
-    if (comparator_(leaf->KeyAt(i), key) == 0) {
-      result->emplace_back(leaf->ValueAt(i));
+  int pos = leaf->SearchKeyIndex(key, comparator_);
+  for (; pos < leaf->GetSize(); pos++) {
+    if (comparator_(leaf->KeyAt(pos), key) == 0) {
+      result->emplace_back(leaf->ValueAt(pos));
       ret = true;
     }
   }
@@ -116,6 +116,10 @@ void BPLUSTREE_TYPE::LeafSearchRead(const KeyType &key, Context &ctx) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool {
+  // 优先尝试乐观插入
+  // if (InsertOptimistic(key, value)) {
+  //   return true;
+  // }
   // Declaration of context instance.
   Context ctx;
   // 1. 解析header
@@ -208,6 +212,45 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
   return true;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::InsertOptimistic(const KeyType &key, const ValueType &value) -> bool {
+  // 1. 处理header节点
+  ReadPageGuard header_page = bpm_->ReadPage(header_page_id_);
+  auto header = header_page.As<BPlusTreeHeaderPage>();
+  if (header->root_page_id_ == INVALID_PAGE_ID) {
+    return false;
+  }
+  // 2. 迭代到叶子节点
+  auto cur_page_id = header->root_page_id_;
+  // 当迭代到叶子节点前，都必须持有其父节点的lock，便于将读锁提升为写锁
+  ReadPageGuard cur = bpm_->ReadPage(cur_page_id);
+  ReadPageGuard parent = std::move(header_page);
+  auto cur_node = cur.As<BPlusTreePage>();
+  while (!cur_node->IsLeafPage()) {
+    auto internal_page = reinterpret_cast<const InternalPage *>(cur_node);
+    int index = internal_page->SearchKeyIndex(key, comparator_);
+    cur_page_id = internal_page->ValueAt(index);
+    parent = std::move(cur);
+    cur = bpm_->ReadPage(cur_page_id);
+    cur_node = cur.As<BPlusTreePage>();
+  }
+  auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
+  // 3. 判断能否安全插入
+  if (!leaf->IsInsertSafe()) {
+    return false;
+  }
+  // 4. 提升为写锁，直接插入
+  cur.Drop();
+  WritePageGuard write_page = bpm_->WritePage(cur_page_id);
+  parent.Drop();
+  auto write_leaf = write_page.AsMut<LeafPage>();
+  if (!leaf->IsInsertSafe()) {
+    return false;
+  }
+  bool success = write_leaf->InsertKeyValue(key, value, comparator_);
+  return success;
+}
+
 /*****************************************************************************
  * REMOVE
  *****************************************************************************/
@@ -220,6 +263,10 @@ auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value) -> bool 
  */
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Remove(const KeyType &key) {
+  // 优先乐观删除
+  if (RemoveOptimistic(key)) {
+    return;
+  }
   // Declaration of context instance.
   Context ctx;
   // 1. 解析header
@@ -302,6 +349,51 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::RemoveOptimistic(const KeyType &key) {
+  // 1. 处理header节点
+  ReadPageGuard header_page = bpm_->ReadPage(header_page_id_);
+  auto header = header_page.As<BPlusTreeHeaderPage>();
+  // 树为空，没必要删除
+  if (header->root_page_id_ == INVALID_PAGE_ID) {
+    return true;
+  }
+  // 2. 迭代到叶子节点
+  bool is_root = true;
+  auto cur_page_id = header->root_page_id_;
+  // 当迭代到叶子节点前，都必须持有其父节点的lock，便于将读锁提升为写锁
+  ReadPageGuard cur = bpm_->ReadPage(cur_page_id);
+  ReadPageGuard parent = std::move(header_page);
+  auto cur_node = cur.As<BPlusTreePage>();
+  while (!cur_node->IsLeafPage()) {
+    auto internal_page = reinterpret_cast<const InternalPage *>(cur_node);
+    int index = internal_page->SearchKeyIndex(key, comparator_);
+    cur_page_id = internal_page->ValueAt(index);
+    parent = std::move(cur);
+    cur = bpm_->ReadPage(cur_page_id);
+    cur_node = cur.As<BPlusTreePage>();
+    is_root = false;
+  }
+  auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
+  // 3. 判断能否安全删除
+  // 3.1 先查找是否在叶子节点中，不在可以直接返回true
+  int pos = leaf->SearchKeyIndex(key, comparator_);
+  if (pos == leaf->GetSize() || comparator_(leaf->KeyAt(pos), key) != 0) {
+    return true;
+  }
+  // 3.2 再判断能否安全删除
+  if (!leaf->IsDeleteSafe()) {
+    return false;
+  }
+  // 4. 提升为写锁，直接删除
+  cur.Drop();
+  WritePageGuard write_page = bpm_->WritePage(cur_page_id);
+  parent.Drop();
+  auto write_leaf = write_page.AsMut<LeafPage>();
+  bool success = write_leaf->DeleteKey(key, comparator_, is_root);
+  return success;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_guard, InternalPage *parent,
                                                         const KeyType &target_key, KeyComparator &comparator,
                                                         int key_index) -> std::pair<bool, int> {
@@ -355,7 +447,6 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   int left_size = left_page->GetSize();
   if (left_page->GetSize() > (left_page->GetMaxSize() + 2) / 2) {
     // 2.1.1 左节点的key_value插入
-    // todo
     leaf->InsertKeyValue(left_page->KeyAt(left_size - 1), left_page->ValueAt(left_size - 1), comparator);
     // 2.1.2 左节点大小-1
     left_page->SetSize(left_size - 1);

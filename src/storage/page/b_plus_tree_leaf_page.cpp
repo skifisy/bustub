@@ -188,8 +188,8 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SplitLeafPage(BPlusTreeLeafPage &other,  //
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_root) -> bool {
-  // TODO(optimize) 优化为二分查找
   // 1. 查找删除的key
+  // 可能删除的key就不在里面，所以要先查找一遍
   int pos = SearchKeyIndex(key, comparator);
   // 找不到，返回true
   if (pos == GetSize() || comparator(key_array_[pos], key) != 0) {
