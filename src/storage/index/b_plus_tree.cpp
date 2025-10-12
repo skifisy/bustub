@@ -400,7 +400,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   auto leaf = leaf_guard.AsMut<LeafPage>();
   BUSTUB_ASSERT(leaf->IsLeafPage(), "error");
   BUSTUB_ASSERT(!parent->IsLeafPage(), "error");
-  BUSTUB_ASSERT(leaf->GetSize() <= (leaf->GetMaxSize() + 1) / 2, "error");
+  BUSTUB_ASSERT(leaf->GetSize() <= leaf->GetMinSize(), "error");
   BUSTUB_ASSERT(key_index >= 0, "error");
   // 1. 处理右节点
   if (key_index + 1 < parent->GetSize()) {
@@ -411,9 +411,9 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
     // 1.1 右节点能借到一个node
     // 1.1.1 将left的位置空出来
     leaf->DeleteKey(target_key, comparator, true);
-    if (right_page->GetSize() + leaf->GetSize() > leaf->GetMaxSize()) {
+    if (right_page->GetSize() > right_page->GetMinSize()) {
       // right_page->GetSize() - 1 > (right_page->GetMaxSize() + 1) / 2
-      BUSTUB_ASSERT(right_page->GetSize() > (right_page->GetMaxSize() + 2) / 2, "error");
+      // BUSTUB_ASSERT(right_page->GetSize() > (right_page->GetMaxSize() + 2) / 2, "error");
       // 1.1.2 将右节点的首个key借过来
       int insert_pos = leaf->GetSize();
       KeyType right_key = right_page->KeyAt(0);
@@ -426,7 +426,9 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
       parent->SetKeyAt(key_index + 1, right_key);  // value不变
       return {true, -1};
     }
-    BUSTUB_ASSERT(right_page->GetSize() <= (right_page->GetMaxSize() + 2) / 2, "error");
+    BUSTUB_ASSERT(right_page->GetSize() + leaf->GetSize() <= right_page->GetMaxSize(),
+                  "out of bounds after combination");
+    // BUSTUB_ASSERT(right_page->GetSize() <= (right_page->GetMaxSize() + 2) / 2, "error");
     // 1.2 借不到node直接合并
     // 1.2.1 合并
     leaf->CombinePage(*right_page);
@@ -445,7 +447,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
   // 先删除当前节点的key
   leaf->DeleteKey(target_key, comparator_, true);
   int left_size = left_page->GetSize();
-  if (left_page->GetSize() > (left_page->GetMaxSize() + 2) / 2) {
+  if (left_page->GetSize() > left_page->GetMinSize()) {
     // 2.1.1 左节点的key_value插入
     leaf->InsertKeyValue(left_page->KeyAt(left_size - 1), left_page->ValueAt(left_size - 1), comparator);
     // 2.1.2 左节点大小-1
@@ -454,6 +456,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingLeafPage(WritePageGuard &leaf_gua
     parent->SetKeyAt(key_index, leaf->KeyAt(0));
     return {true, -1};
   }
+  BUSTUB_ASSERT(leaf->GetSize() + left_page->GetSize() <= leaf->GetMaxSize(), "out of bounds after combination");
   // 2.2 合并节点
   // 2.2.1 合并
   left_page->CombinePage(*leaf);
@@ -481,7 +484,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
     // 2.1 判断，尝试借用节点
     int cur_size = cur_internal->GetSize();
     int right_size = right_page->GetSize();
-    if (right_size > (right_page->GetMaxSize() + 2) / 2) {
+    if (right_size > right_page->GetMinSize()) {
       // 2.1.1 从右节点借用一个
       BUSTUB_ASSERT(right_size > 0, "error");
       cur_internal->SetSize(cur_size + 1);
@@ -492,6 +495,8 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
       // 2.1.3 返回父节点要调整的key_index，key_value
       return {true, key_index + 1, right_page->KeyAt(0)};
     }
+    BUSTUB_ASSERT(right_page->GetSize() + cur_internal->GetSize() <= right_page->GetMaxSize(),
+                  "out of bounds after combination");
     // 2.2 否则，合并右节点
     // 2.2.1 先保存要删除的key
     KeyType key_tobe_delete = right_page->KeyAt(0);
@@ -509,7 +514,7 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
 
   // 3.1 尝试借用节点
   int left_size = left_page->GetSize();
-  if (left_size > (left_page->GetMaxSize() + 2) / 2) {
+  if (left_size > left_page->GetMinSize()) {
     // 3.1.1 从左节点借用一个
     BUSTUB_ASSERT(left_size > 0, "error");
     KeyType k = left_page->KeyAt(left_size - 1);
@@ -519,6 +524,8 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
     // 3.1.2 更新上层的key
     return {true, key_index, k};
   }
+  BUSTUB_ASSERT(cur_internal->GetSize() + left_page->GetSize() <= cur_internal->GetMaxSize(),
+                "out of bounds after combination");
   // 3.2 合并到左侧节点
   // 3.2.1 保存要删除的key
   KeyType key_tobe_delete = cur_internal->KeyAt(0);

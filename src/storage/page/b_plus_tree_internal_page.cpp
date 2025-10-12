@@ -73,7 +73,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::IsInsertSafe() const -> bool { return !IsFull(); }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::IsDeleteSafe() const -> bool { return GetSize() > (GetMaxSize() + 1) / 2; }
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::IsDeleteSafe() const -> bool { return GetSize() > GetMinSize(); }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value,
@@ -175,7 +175,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::SearchKeyIndex(const KeyType &key, KeyCompa
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &comparator, bool is_force) -> bool {
   // 只有当前数量大于一半，才能删除
-  if (GetSize() <= (GetMaxSize() + 1) / 2 && !is_force) {
+  if (GetSize() <= GetMinSize() && !is_force) {
     return false;
   }
   int pos = SearchKeyIndex(key, comparator);
@@ -193,7 +193,7 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::DeleteKeyByIndex(int key_index) -> bool {
   // 当前数量大于一半，可以直接删除，无需调整
-  bool ret = GetSize() > (GetMaxSize() + 1) / 2;
+  bool ret = GetSize() > GetMinSize();
 
   BUSTUB_ASSERT(key_index >= 0, "error");
   BUSTUB_ASSERT(key_index < GetSize(), "error");

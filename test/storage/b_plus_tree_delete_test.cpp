@@ -62,6 +62,7 @@ TEST(BPlusTreeTests, DeleteTestNoIterator) {
 
   std::vector<int64_t> remove_keys = {1, 5, 3, 4};
   for (auto key : remove_keys) {
+    std::cout << tree.DrawBPlusTree() << std::endl;
     index_key.SetFromInteger(key);
     tree.Remove(index_key);
   }

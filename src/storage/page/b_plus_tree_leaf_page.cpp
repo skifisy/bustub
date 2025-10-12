@@ -94,7 +94,7 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::IsInsertSafe() const -> bool { return !IsFull(); }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::IsDeleteSafe() const -> bool { return GetSize() > (GetMaxSize() + 1) / 2; }
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::IsDeleteSafe() const -> bool { return GetSize() > GetMinSize(); }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::InsertKeyValue(const KeyType &key, const ValueType &value, KeyComparator &comparator)
@@ -197,8 +197,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::DeleteKey(const KeyType &key, KeyComparator &co
   }
 
   // 2. 保证key数量大于一半
-  int min_size = (GetMaxSize() + 1) / 2;
-  if (!is_root && GetSize() <= min_size) {
+  if (!is_root && GetSize() <= GetMinSize()) {
     return false;
   }
 
