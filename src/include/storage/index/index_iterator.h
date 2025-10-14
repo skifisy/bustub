@@ -31,9 +31,9 @@ class IndexIterator {
 
   ~IndexIterator();  // NOLINT
 
-  explicit IndexIterator(WritePageGuard guard, int pos, BufferPoolManager *bpm)
-      : is_invalid_(false), write_guard_(std::move(guard)), pos_(pos), bpm_(bpm) {
-    cur_page_ = write_guard_.AsMut<LeafPage>();
+  explicit IndexIterator(ReadPageGuard guard, int pos, BufferPoolManager *bpm)
+      : is_invalid_(false), read_guard_(std::move(guard)), pos_(pos), bpm_(bpm) {
+    cur_page_ = read_guard_.As<LeafPage>();
   }
 
   auto IsEnd() -> bool;
@@ -48,8 +48,8 @@ class IndexIterator {
 
  private:
   bool is_invalid_;
-  WritePageGuard write_guard_;
-  LeafPage *cur_page_ = nullptr;
+  ReadPageGuard read_guard_;
+  const LeafPage *cur_page_ = nullptr;
   int pos_ = -1;
   BufferPoolManager *bpm_ = nullptr;
 };

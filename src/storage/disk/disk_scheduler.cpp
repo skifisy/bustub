@@ -23,8 +23,7 @@
 namespace bustub {
 
 DiskScheduler::DiskScheduler(DiskManager *disk_manager, int thread_num)
-    : disk_manager_(disk_manager), request_queues_(thread_num), thread_num_(thread_num) {
-  // TODO(P1): remove this line after you have implemented the disk scheduler API
+    : disk_manager_(disk_manager), thread_num_(thread_num) {
   for (int i = 0; i < thread_num; i++) {
     background_threads_.emplace_back([=]() { StartWorkerThread(i); });
   }
@@ -32,8 +31,8 @@ DiskScheduler::DiskScheduler(DiskManager *disk_manager, int thread_num)
 
 DiskScheduler::~DiskScheduler() {
   // Put a `std::nullopt` in the queue to signal to exit the loop
-  for (auto &request_queue : request_queues_) {
-    request_queue.Put(std::nullopt);
+  for (int i = 0; i < thread_num_; i++) {
+    request_queue_.Put(std::nullopt);
   }
   for (auto &background_thread : background_threads_) {
     if (background_thread.has_value()) {
@@ -48,19 +47,21 @@ void DiskScheduler::Schedule(DiskRequest r) {
   BUSTUB_ASSERT(!r.frame_ || (r.is_write_ && r.frame_->write_back_done_ == false) ||
                     (!r.is_write_ && r.frame_->write_back_done_ == true),
                 "error");
-  // LOG_DEBUG("%d schedule %s page %d", static_cast<bool>(r.frame_), r.is_write_ ? "write" : "read", r.page_id_);
-  request_queues_[pid % thread_num_].Put(std::move(r));
+  request_queue_.Put(std::move(r));
 }
 
 void DiskScheduler::StartWorkerThread(int thread_id) {
   // 循环获取DiskRequest
-  while (std::optional<DiskRequest> request = request_queues_[thread_id].Get()) {
+  while (std::optional<DiskRequest> request = request_queue_.Get()) {
     auto &frame = request->frame_;
     if (request->is_write_) {
       // 写数据
       disk_manager_->WritePage(request->page_id_, request->data_);
       if (frame) {
         std::lock_guard<std::mutex> lock(frame->mutex_io_);
+        BUSTUB_ASSERT(!frame->write_back_done_, "error");
+        BUSTUB_ASSERT(!frame->has_read_done_, "error");
+        BUSTUB_ASSERT(!frame->has_read_launched_, "error");
         frame->write_back_done_ = true;
         frame->cv_.notify_all();
       } else {
@@ -71,6 +72,9 @@ void DiskScheduler::StartWorkerThread(int thread_id) {
       disk_manager_->ReadPage(request->page_id_, request->data_);
       if (frame) {
         std::lock_guard<std::mutex> lock(frame->mutex_io_);
+        BUSTUB_ASSERT(!frame->has_read_done_, "error");
+        BUSTUB_ASSERT(frame->write_back_done_, "error");
+        BUSTUB_ASSERT(frame->has_read_launched_, "error");
         frame->has_read_done_ = true;
         frame->cv_.notify_all();
       } else {

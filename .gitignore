@@ -218,6 +218,7 @@ Makefile.config
 build
 .build_debug/*
 .build_release/*
+build_thread
 distribute/*
 *.testbin
 *.bin

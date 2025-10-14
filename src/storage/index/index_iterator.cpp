@@ -28,7 +28,7 @@ auto INDEXITERATOR_TYPE::operator*() -> std::pair<const KeyType &, const ValueTy
   BUSTUB_ASSERT(!is_invalid_, "error");
   BUSTUB_ASSERT(pos_ >= 0, "error");
   BUSTUB_ASSERT(pos_ < cur_page_->GetSize(), "error");
-  return {cur_page_->KeyAtRef(pos_), cur_page_->ValueAtRef(pos_)};
+  return {cur_page_->KeyAt(pos_), cur_page_->ValueAt(pos_)};
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -38,12 +38,12 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
     page_id_t next_page_id = cur_page_->GetNextPageId();
     if (next_page_id == INVALID_PAGE_ID) {
       is_invalid_ = true;
-      write_guard_.Drop();
+      read_guard_.Drop();
       pos_ = 0;
       return *this;
     }
-    write_guard_ = bpm_->WritePage(next_page_id);
-    cur_page_ = write_guard_.AsMut<LeafPage>();
+    read_guard_ = bpm_->ReadPage(next_page_id);
+    cur_page_ = read_guard_.As<LeafPage>();
     pos_ = 0;
   }
   return *this;

@@ -431,7 +431,7 @@ auto BufferPoolManager::GetPinCount(page_id_t page_id) -> std::optional<size_t> 
 auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t> {
   std::unique_lock<std::mutex> lock(*bpm_latch_);
 
-  frame_id_t frame_id = -1;
+  frame_id_t frame_id = INVALID_FRAME_ID;
   page_id_t page_id_before = INVALID_PAGE_ID;
   bool is_dirty = false;
   // 1. 页表中是否存在该page
@@ -490,22 +490,24 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
   // 处理IO逻辑
   if (is_dirty) {
     // 1. 写回脏页
+    std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
     BUSTUB_ASSERT(page_id_before != INVALID_FRAME_ID, "error");
     DiskRequest r = {true, frame->GetDataMut(), page_id_before, {}, frame};
     BUSTUB_ASSERT(!frame->write_back_done_, "error");
     disk_scheduler_->Schedule(std::move(r));
-    {
-      std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
-      frame->cv_.wait(io_lock, [&frame]() { return frame->write_back_done_; });
+    // {
+    // std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
 
-      // 2. 发起读入
-      if (!frame->has_read_launched_) {
-        BUSTUB_ASSERT(frame->write_back_done_, "error");
-        DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
-        disk_scheduler_->Schedule(std::move(r));
-        frame->has_read_launched_ = true;
-      }
+    frame->cv_.wait(io_lock, [&frame]() { return frame->write_back_done_; });
+
+    // 2. 发起读入
+    if (!frame->has_read_launched_) {
+      BUSTUB_ASSERT(frame->write_back_done_, "error");
+      DiskRequest r = {false, frame->GetDataMut(), page_id, {}, frame};
+      disk_scheduler_->Schedule(std::move(r));
+      frame->has_read_launched_ = true;
     }
+
     // 3. 唤醒等待脏页写回的线程
     {
       std::unique_lock<std::mutex> dirty_lock(dirty_latch_);
@@ -513,8 +515,10 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
       dirty_cv_.notify_all();
     }
     // 4. 阻塞等待frame读入
-    std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
+    // std::unique_lock<std::mutex> io_lock(frame->mutex_io_);
     frame->cv_.wait(io_lock, [&frame]() { return frame->has_read_done_; });
+    // }
+
   } else {
     // 1. 非脏页，该page也可能正在写回
     {

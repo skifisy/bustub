@@ -495,9 +495,9 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
       // 2.1.3 返回父节点要调整的key_index，key_value
       return {true, key_index + 1, right_page->KeyAt(0)};
     }
+    // 2.2 否则，合并右节点
     BUSTUB_ASSERT(right_page->GetSize() + cur_internal->GetSize() <= right_page->GetMaxSize(),
                   "out of bounds after combination");
-    // 2.2 否则，合并右节点
     // 2.2.1 先保存要删除的key
     KeyType key_tobe_delete = right_page->KeyAt(0);
     // 2.2.2 合并节点
@@ -524,9 +524,9 @@ auto BPLUSTREE_TYPE::BorrowOrCombineWithSiblingInternalPage(WritePageGuard &cur_
     // 3.1.2 更新上层的key
     return {true, key_index, k};
   }
+  // 3.2 合并到左侧节点
   BUSTUB_ASSERT(cur_internal->GetSize() + left_page->GetSize() <= cur_internal->GetMaxSize(),
                 "out of bounds after combination");
-  // 3.2 合并到左侧节点
   // 3.2.1 保存要删除的key
   KeyType key_tobe_delete = cur_internal->KeyAt(0);
   // 3.2.2 合并节点
@@ -567,9 +567,7 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   }
   auto leaf = reinterpret_cast<const LeafPage *>(cur_node);
   BUSTUB_ASSERT(leaf->GetSize() > 0, "error");
-  // 读锁提升为写锁
-  cur.Drop();
-  return INDEXITERATOR_TYPE(bpm_->WritePage(cur_page_id), 0, bpm_);
+  return INDEXITERATOR_TYPE(std::move(cur), 0, bpm_);
 }
 
 /*
@@ -605,9 +603,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   if (pos == leaf->GetSize()) {
     return INDEXITERATOR_TYPE();
   }
-  // 读锁提升为写锁
-  cur.Drop();
-  return INDEXITERATOR_TYPE(bpm_->WritePage(cur_page_id), pos, bpm_);
+  return INDEXITERATOR_TYPE(std::move(cur), pos, bpm_);
 }
 
 /*

@@ -235,9 +235,10 @@ TEST(BufferPoolManagerTest, PagePinMediumTest) {
   std::vector<WritePageGuard> pages;
 
   // Scenario: We should be able to create new pages until we fill up the buffer pool.
+  // write page，直到占满buffer pool
   for (size_t i = 0; i < FRAMES; i++) {
     auto pid = bpm->NewPage();
-    auto page = bpm->WritePage(pid);
+    auto page = bpm->WritePage(pid);  //pin1
     pages.push_back(std::move(page));
   }
 
@@ -255,6 +256,7 @@ TEST(BufferPoolManagerTest, PagePinMediumTest) {
   }
 
   // Scenario: Drop the first 5 pages to unpin them.
+  // drop前5个page
   for (size_t i = 0; i < FRAMES / 2; i++) {
     page_id_t pid = pages[0].GetPageId();
     EXPECT_EQ(1, bpm->GetPinCount(pid));
@@ -270,9 +272,10 @@ TEST(BufferPoolManagerTest, PagePinMediumTest) {
 
   // Scenario: After unpinning pages {1, 2, 3, 4, 5}, we should be able to create 4 new pages and bring them into
   // memory. Bringing those 4 pages into memory should evict the first 4 pages {1, 2, 3, 4} because of LRU.
+  // 创建4个新的page
   for (size_t i = 0; i < ((FRAMES / 2) - 1); i++) {
     auto pid = bpm->NewPage();
-    auto page = bpm->WritePage(pid);
+    auto page = bpm->WritePage(pid);  // pin2
     pages.push_back(std::move(page));
   }
 
