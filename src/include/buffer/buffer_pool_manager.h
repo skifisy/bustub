@@ -16,11 +16,9 @@
 #include <condition_variable>
 #include <list>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "buffer/lru_k_replacer.h"
@@ -175,12 +173,6 @@ class BufferPoolManager {
 
   /** @brief A pointer to the disk scheduler. */
   std::unique_ptr<DiskScheduler> disk_scheduler_;
-
-  std::unordered_set<page_id_t> dirty_pages_;  // 保存脏页集合
-
-  std::condition_variable dirty_cv_;  // 等待脏页条件变量
-
-  std::mutex dirty_latch_;
 
   /**
    * @brief A pointer to the log manager.
