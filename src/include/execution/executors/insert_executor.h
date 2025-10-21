@@ -17,6 +17,7 @@
 
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
+#include "execution/executors/values_executor.h"
 #include "execution/plans/insert_plan.h"
 #include "storage/table/tuple.h"
 
@@ -43,13 +44,14 @@ class InsertExecutor : public AbstractExecutor {
   /**
    * Yield the number of rows inserted into the table.
    * @param[out] tuple The integer tuple indicating the number of rows inserted into the table
+   * 返回一个整数元组来表示结果行数
    * @param[out] rid The next tuple RID produced by the insert (ignore, not used)
    * @return `true` if a tuple was produced, `false` if there are no more tuples
    *
    * NOTE: InsertExecutor::Next() does not use the `rid` out-parameter.
    * NOTE: InsertExecutor::Next() returns true with number of inserted rows produced only once.
    */
-  auto Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool override;
+  auto Next(Tuple *tuple, RID *rid) -> bool override;
 
   /** @return The output schema for the insert */
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); };
@@ -57,6 +59,8 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  bool is_executed_;
 };
 
 }  // namespace bustub

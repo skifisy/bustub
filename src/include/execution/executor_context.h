@@ -105,6 +105,7 @@ class ExecutorContext {
   TransactionManager *txn_mgr_;
   /** The lock manager associated with this executor context */
   LockManager *lock_mgr_;
+  // NLJ: Nested Loop Join
   /** The set of NLJ check executors associated with this executor context */
   std::deque<std::pair<AbstractExecutor *, AbstractExecutor *>> nlj_check_exec_set_;
   /** The set of check options associated with this executor context */
