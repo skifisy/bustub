@@ -36,6 +36,11 @@ class IndexIterator {
     cur_page_ = read_guard_.As<LeafPage>();
   }
 
+  IndexIterator(const IndexIterator &that) = delete;
+  IndexIterator(IndexIterator &&that) noexcept = default;
+  auto operator=(const IndexIterator &that) -> IndexIterator & = delete;
+  auto operator=(IndexIterator &&that) noexcept -> IndexIterator & = default;
+
   auto IsEnd() -> bool;
 
   auto operator*() -> std::pair<const KeyType &, const ValueType &>;

@@ -49,5 +49,8 @@ class IndexScanExecutor : public AbstractExecutor {
   /** The index scan plan node to be executed. */
   const IndexScanPlanNode *plan_;
   size_t current_idx_ = 0;
+  std::unique_ptr<BPlusTreeIndexIteratorForTwoIntegerColumn> index_iter_ = nullptr;
+  bool is_point_scan_ = true;
+  BPlusTreeIndexForTwoIntegerColumn *b_plus_tree_index_ = nullptr;
 };
 }  // namespace bustub
