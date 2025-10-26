@@ -238,7 +238,7 @@ TEST(BufferPoolManagerTest, PagePinMediumTest) {
   // write page，直到占满buffer pool
   for (size_t i = 0; i < FRAMES; i++) {
     auto pid = bpm->NewPage();
-    auto page = bpm->WritePage(pid);  //pin1
+    auto page = bpm->WritePage(pid);  // pin1
     pages.push_back(std::move(page));
   }
 

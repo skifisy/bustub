@@ -44,8 +44,8 @@ auto Optimizer::OptimizeSeqScanAsIndexScan(const bustub::AbstractPlanNodeRef &pl
   };
 
   auto can_convert_to_index = [is_index](const std::string &table_name, const Schema &schema,
-                                         const AbstractExpressionRef &expr,
-                                         std::shared_ptr<IndexInfo> &index_info) -> std::tuple<bool, uint32_t> {
+                                         const AbstractExpressionRef &expr, std::shared_ptr<IndexInfo> &index_info,
+                                         std::vector<AbstractExpressionRef> &pred_keys) -> std::tuple<bool, uint32_t> {
     auto comparison_expr = std::dynamic_pointer_cast<ComparisonExpression>(expr);
     if (comparison_expr == nullptr) {
       return {false, 0};
@@ -61,6 +61,7 @@ auto Optimizer::OptimizeSeqScanAsIndexScan(const bustub::AbstractPlanNodeRef &pl
       // 两边都是索引，无法转换
       return {false, 0};
     }
+    pred_keys.push_back(is_left_index ? right_expr : left_expr);
     return {true, is_left_index ? left_col_idx : right_col_idx};
   };
 
@@ -71,28 +72,33 @@ auto Optimizer::OptimizeSeqScanAsIndexScan(const bustub::AbstractPlanNodeRef &pl
       // TODO() 先简单地判断过滤谓词是否为单个 ColumnValueExpression，不进行递归
       const auto &schema = catalog_.GetTable(seq_scan_plan.table_oid_)->schema_;
       const auto &table_name = seq_scan_plan.table_name_;
+      std::vector<AbstractExpressionRef> pred_keys;
+
       auto logic_expr = std::dynamic_pointer_cast<LogicExpression>(seq_scan_plan.filter_predicate_);
-      if (logic_expr != nullptr) {
+      // 支持形如 col = value OR col = value 的谓词转换为索引扫描
+      if (logic_expr != nullptr && logic_expr->logic_type_ == LogicType::Or) {
         std::shared_ptr<IndexInfo> index_info1 = nullptr;
         std::shared_ptr<IndexInfo> index_info2 = nullptr;
         auto [can_convert1, index_key_idx1] =
-            can_convert_to_index(table_name, schema, logic_expr->GetChildAt(0), index_info1);
+            can_convert_to_index(table_name, schema, logic_expr->GetChildAt(0), index_info1, pred_keys);
         auto [can_convert2, index_key_idx2] =
-            can_convert_to_index(table_name, schema, logic_expr->GetChildAt(1), index_info2);
+            can_convert_to_index(table_name, schema, logic_expr->GetChildAt(1), index_info2, pred_keys);
         if (can_convert1 && can_convert2 && index_key_idx1 == index_key_idx2) {
           BUSTUB_ASSERT(index_info1 != nullptr, "Index must exist");
           return std::make_shared<IndexScanPlanNode>(seq_scan_plan.output_schema_, seq_scan_plan.table_oid_,
-                                                     index_info1->index_oid_, seq_scan_plan.filter_predicate_);
+                                                     index_info1->index_oid_, seq_scan_plan.filter_predicate_,
+                                                     std::move(pred_keys));
         }
       }
 
       std::shared_ptr<IndexInfo> index_info = nullptr;
       auto [can_convert, index_key_idx] =
-          can_convert_to_index(table_name, schema, seq_scan_plan.filter_predicate_, index_info);
+          can_convert_to_index(table_name, schema, seq_scan_plan.filter_predicate_, index_info, pred_keys);
       if (can_convert) {
         BUSTUB_ASSERT(index_info != nullptr, "Index must exist");
         return std::make_shared<IndexScanPlanNode>(seq_scan_plan.output_schema_, seq_scan_plan.table_oid_,
-                                                   index_info->index_oid_, seq_scan_plan.filter_predicate_);
+                                                   index_info->index_oid_, seq_scan_plan.filter_predicate_,
+                                                   std::move(pred_keys));
       }
     }
   }

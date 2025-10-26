@@ -29,7 +29,6 @@ void SeqScanExecutor::Init() {
   auto table = catalog->GetTable(tid);
   auto table_heap = table->table_.get();
   iter_ = std::make_unique<TableIterator>(table_heap->MakeIterator());
-  table_info_ = table;
 }
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
@@ -44,7 +43,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     *tuple = std::move(tup);
     // 根据过滤条件过滤
     if (filter) {
-      auto value = filter->Evaluate(tuple, table_info_->schema_);
+      auto value = filter->Evaluate(tuple, plan_->OutputSchema());
       switch (value.GetTypeId()) {
         case TypeId::BOOLEAN: {
           if (!static_cast<bool>(value.GetAs<int8_t>())) {
