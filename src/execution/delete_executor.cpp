@@ -39,6 +39,14 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   while (child_executor_->Next(&tup, &r)) {
     // 删除数据
     table_heap->UpdateTupleMeta({time(nullptr), true}, r);
+
+    // 删除索引
+    const auto &indexes = catalog->GetTableIndexes(table->name_);
+    for (auto &index : indexes) {
+      auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
+      auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
+      bplus_index->DeleteEntry(index_key, r, exec_ctx_->GetTransaction());
+    }
     ret++;
   }
   Value v = ValueFactory::GetIntegerValue(ret);

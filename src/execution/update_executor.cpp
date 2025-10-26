@@ -39,19 +39,30 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
   int ret = 0;
   // 从底层算子获取tuple
-  Tuple tup;
+  Tuple old_tup;
   RID r;
-  while (child_executor_->Next(&tup, &r)) {
-    // 先保存更新后的值
+  while (child_executor_->Next(&old_tup, &r)) {
+    // 先保存更新后的值（没有被更新的字段用ColumnValueExpression表示，直接取原值）
     std::vector<Value> update_values;
     for (auto &target_expr : plan_->target_expressions_) {
-      update_values.push_back(target_expr->Evaluate(&tup, schema));
+      update_values.push_back(target_expr->Evaluate(&old_tup, schema));
     }
     // 删除原来的数据
     table_heap->UpdateTupleMeta({time(nullptr), true}, r);
     // 插入更新后的数据
     Tuple new_tup(update_values, &schema);
-    table_heap->InsertTuple({time(nullptr), false}, new_tup);
+    auto rid_inserted = table_heap->InsertTuple({time(nullptr), false}, new_tup);
+
+    // 更新索引
+    const auto &indexes = catalog->GetTableIndexes(table->name_);
+    for (auto &index : indexes) {
+      auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
+      auto index_key = old_tup.KeyFromTuple(schema, index->key_schema_, index->index_->GetKeyAttrs());
+      bplus_index->DeleteEntry(index_key, r, exec_ctx_->GetTransaction());
+
+      auto new_index_key = new_tup.KeyFromTuple(schema, index->key_schema_, index->index_->GetKeyAttrs());
+      bplus_index->InsertEntry(new_index_key, *rid_inserted, exec_ctx_->GetTransaction());
+    }
     ret++;
   }
   Value v = ValueFactory::GetIntegerValue(ret);

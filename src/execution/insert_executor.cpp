@@ -38,10 +38,18 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   int ret = 0;
   TupleMeta meta = {0, false};
   RID r;
+  std::optional<RID> rid_inserted;
   while (child_executor_->Next(&tup, &r)) {
     meta.ts_ = time(nullptr);
-    if (table_heap->InsertTuple(meta, tup)) {
+    if ((rid_inserted = table_heap->InsertTuple(meta, tup))) {
       ret++;
+      // 插入索引
+      const auto &indexes = catalog->GetTableIndexes(table->name_);
+      for (auto &index : indexes) {
+        auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
+        auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
+        bplus_index->InsertEntry(index_key, *rid_inserted, exec_ctx_->GetTransaction());
+      }
     }
   }
   std::vector<Value> values{};

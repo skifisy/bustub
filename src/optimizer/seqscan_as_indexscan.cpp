@@ -102,7 +102,7 @@ auto Optimizer::OptimizeSeqScanAsIndexScan(const bustub::AbstractPlanNodeRef &pl
       }
     }
   }
-  return plan;
+  return optimized_plan;
 }
 
 }  // namespace bustub
