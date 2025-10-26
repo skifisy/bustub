@@ -10,6 +10,8 @@
 
 namespace bustub {
 
+// 递归遍历计划树，将形如Filter->SeqScan的子树优化为SeqScan(filter_predicate)
+// 即：将过滤谓词下推到SeqScan计划节点中
 auto Optimizer::OptimizeMergeFilterScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
   std::vector<AbstractPlanNodeRef> children;
   for (const auto &child : plan->GetChildren()) {
