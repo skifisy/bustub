@@ -50,12 +50,14 @@ auto Planner::PlanDelete(const DeleteStatement &statement) -> AbstractPlanNodeRe
 
 auto Planner::PlanUpdate(const UpdateStatement &statement) -> AbstractPlanNodeRef {
   auto table = PlanTableRef(*statement.table_);
+  // 1. where子句处理
   auto [_, condition] = PlanExpression(*statement.filter_expr_, {table});
   AbstractPlanNodeRef filter =
       std::make_shared<FilterPlanNode>(table->output_schema_, std::move(condition), std::move(table));
 
   auto scope = std::vector{filter};
 
+  // 2. target_expr_处理
   std::vector<AbstractExpressionRef> target_exprs;
   target_exprs.resize(filter->output_schema_->GetColumnCount());
 
