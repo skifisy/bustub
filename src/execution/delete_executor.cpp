@@ -18,10 +18,34 @@ namespace bustub {
 
 DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {}
 
-void DeleteExecutor::Init() { throw NotImplementedException("DeleteExecutor is not implemented"); }
+void DeleteExecutor::Init() { child_executor_->Init(); }
 
-auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { return false; }
+auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
+  if (is_executed_) {
+    return false;
+  }
+  is_executed_ = true;
+  table_oid_t tid = plan_->table_oid_;
+  auto catalog = exec_ctx_->GetCatalog();
+  auto table = catalog->GetTable(tid);
+  auto table_heap = table->table_.get();
+
+  int ret = 0;
+  // 从底层算子获取tuple
+  Tuple tup;
+  RID r;
+  while (child_executor_->Next(&tup, &r)) {
+    // 删除数据
+    table_heap->UpdateTupleMeta({time(nullptr), true}, r);
+    ret++;
+  }
+  Value v = ValueFactory::GetIntegerValue(ret);
+  std::vector<Value> values{v};
+  *tuple = Tuple{values, &GetOutputSchema()};
+
+  return true;
+}
 
 }  // namespace bustub

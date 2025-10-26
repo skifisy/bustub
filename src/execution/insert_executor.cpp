@@ -23,7 +23,7 @@ InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *
                                std::unique_ptr<AbstractExecutor> &&child_executor)
     : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)), is_executed_(false) {}
 
-void InsertExecutor::Init() {}
+void InsertExecutor::Init() { child_executor_->Init(); }
 
 auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   if (is_executed_) {
@@ -38,7 +38,6 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   int ret = 0;
   TupleMeta meta = {0, false};
   RID r;
-  child_executor_->Init();
   while (child_executor_->Next(&tup, &r)) {
     meta.ts_ = time(nullptr);
     if (table_heap->InsertTuple(meta, tup)) {

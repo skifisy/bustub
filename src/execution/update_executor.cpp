@@ -22,7 +22,7 @@ UpdateExecutor::UpdateExecutor(ExecutorContext *exec_ctx, const UpdatePlanNode *
   // As of Fall 2022, you DON'T need to implement update executor to have perfect score in project 3 / project 4.
 }
 
-void UpdateExecutor::Init() {}
+void UpdateExecutor::Init() { child_executor_->Init(); }
 
 auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if (is_executed_) {
@@ -41,7 +41,6 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   // 从底层算子获取tuple
   Tuple tup;
   RID r;
-  child_executor_->Init();
   while (child_executor_->Next(&tup, &r)) {
     // 先保存更新后的值
     std::vector<Value> update_values;
