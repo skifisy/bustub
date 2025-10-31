@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "catalog/catalog.h"
+#include "catalog/schema.h"
 #include "concurrency/transaction.h"
 #include "execution/expressions/abstract_expression.h"
 #include "execution/plans/abstract_plan.h"
@@ -88,6 +89,11 @@ class Optimizer {
    * @note Fall 2023 only: using hash index and only support point lookup
    */
   auto OptimizeSeqScanAsIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
+  void OptimizeSeqScanAsIndexScanHelper(const std::vector<std::shared_ptr<IndexInfo>> &indexs, const Schema &schema,
+                                        const AbstractExpressionRef &expr, bool &use_index,
+                                        std::vector<AbstractExpressionRef> &pred_keys,
+                                        std::optional<index_oid_t> &index_idx);
 
   /** @brief check if the index can be matched */
   auto MatchIndex(const std::string &table_name, uint32_t index_key_idx)

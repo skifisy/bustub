@@ -42,6 +42,7 @@ auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
   if (is_point_scan_) {
     Tuple key_tuple;  // 构造索引键的tuple
+    // 点查询，可能查询多个value，保存在pred_keys中
     while (current_idx_ < plan_->pred_keys_.size()) {
       const auto &col_expr = plan_->pred_keys_[current_idx_++];
       auto val = col_expr->Evaluate(&key_tuple, GetOutputSchema());  // 不需要tuple和schema
