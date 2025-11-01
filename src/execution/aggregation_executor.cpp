@@ -25,6 +25,10 @@ AggregationExecutor::AggregationExecutor(ExecutorContext *exec_ctx, const Aggreg
       aht_iterator_(aht_.Begin()) {}
 
 void AggregationExecutor::Init() {
+  if (!aht_.IsEmpty()) {
+    aht_iterator_ = aht_.Begin();
+    return;
+  }
   child_executor_->Init();
   // 构建hash table
   Tuple tuple;

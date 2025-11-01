@@ -32,6 +32,7 @@ void IndexScanExecutor::Init() {
     is_point_scan_ = false;
     index_iter_ = std::make_unique<BPlusTreeIndexIteratorForTwoIntegerColumn>(b_plus_tree_index_->GetBeginIterator());
   }
+  current_idx_ = 0;
 }
 
 // 实现点查询就行了

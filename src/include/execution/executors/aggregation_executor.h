@@ -134,6 +134,8 @@ class SimpleAggregationHashTable {
    */
   void Clear() { ht_.clear(); }
 
+  auto IsEmpty() -> bool { return ht_.empty(); }
+
   /** An iterator over the aggregation hash table */
   class Iterator {
    public:
