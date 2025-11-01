@@ -12,13 +12,19 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "catalog/schema.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
+#include "type/value.h"
 
 namespace bustub {
 
@@ -51,9 +57,27 @@ class HashJoinExecutor : public AbstractExecutor {
   /** @return The output schema for the join */
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); };
 
+  auto MakeJoinValue(const Tuple &tup, const Schema &schema) -> JoinValue {
+    JoinValue join_value;
+    for (size_t i = 0; i < schema.GetColumnCount(); i++) {
+      join_value.values_.emplace_back(tup.GetValue(&schema, i));
+    }
+    return join_value;
+  }
+
  private:
   /** The HashJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> left_child_;
+  std::unique_ptr<AbstractExecutor> right_child_;
+  std::unordered_map<JoinKey, std::vector<JoinValue>> map_ = {};
+  std::unordered_map<JoinKey, std::vector<JoinValue>>::const_iterator iter_;
+
+  std::vector<JoinValue> *right_join_values_{nullptr};
+  size_t value_idx_{INTMAX_MAX};
+  bool value_iter_valid_{false};
+
+  Tuple left_tuple_;
 };
 
 }  // namespace bustub
