@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -74,10 +75,43 @@ class SimpleAggregationHashTable {
     for (uint32_t i = 0; i < agg_exprs_.size(); i++) {
       switch (agg_types_[i]) {
         case AggregationType::CountStarAggregate:
+          if (input.aggregates_[i].GetAs<int32_t>() != 0) {
+            result->aggregates_[i] = ValueFactory::GetIntegerValue(result->aggregates_[i].GetAs<int32_t>() + 1);
+          }
+          break;
         case AggregationType::CountAggregate:
+          if (!input.aggregates_[i].IsNull()) {
+            if (result->aggregates_[i].IsNull()) {
+              result->aggregates_[i] = ValueFactory::GetIntegerValue(1);
+            } else {
+              result->aggregates_[i] = ValueFactory::GetIntegerValue(result->aggregates_[i].GetAs<int32_t>() + 1);
+            }
+          }
+          break;
         case AggregationType::SumAggregate:
+          if (!input.aggregates_[i].IsNull()) {
+            if (result->aggregates_[i].IsNull()) {
+              result->aggregates_[i] = input.aggregates_[i];
+            } else {
+              result->aggregates_[i] = result->aggregates_[i].Add(input.aggregates_[i]);
+            }
+          }
+          break;
         case AggregationType::MinAggregate:
+          if (!input.aggregates_[i].IsNull()) {
+            if (result->aggregates_[i].IsNull() ||
+                input.aggregates_[i].CompareLessThan(result->aggregates_[i]) == CmpBool::CmpTrue) {
+              result->aggregates_[i] = input.aggregates_[i];
+            }
+          }
+          break;
         case AggregationType::MaxAggregate:
+          if (!input.aggregates_[i].IsNull()) {
+            if (result->aggregates_[i].IsNull() ||
+                input.aggregates_[i].CompareGreaterThan(result->aggregates_[i]) == CmpBool::CmpTrue) {
+              result->aggregates_[i] = input.aggregates_[i];
+            }
+          }
           break;
       }
     }
@@ -203,9 +237,9 @@ class AggregationExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> child_executor_;
 
   /** Simple aggregation hash table */
-  // TODO(Student): Uncomment SimpleAggregationHashTable aht_;
+  SimpleAggregationHashTable aht_;
 
   /** Simple aggregation hash table iterator */
-  // TODO(Student): Uncomment SimpleAggregationHashTable::Iterator aht_iterator_;
+  SimpleAggregationHashTable::Iterator aht_iterator_;
 };
 }  // namespace bustub
