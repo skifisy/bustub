@@ -26,7 +26,10 @@ namespace bustub {
 HashJoinExecutor::HashJoinExecutor(ExecutorContext *exec_ctx, const HashJoinPlanNode *plan,
                                    std::unique_ptr<AbstractExecutor> &&left_child,
                                    std::unique_ptr<AbstractExecutor> &&right_child)
-    : AbstractExecutor(exec_ctx), left_child_(std::move(left_child)), right_child_(std::move(right_child)) {}
+    : AbstractExecutor(exec_ctx),
+      plan_(plan),
+      left_child_(std::move(left_child)),
+      right_child_(std::move(right_child)) {}
 
 void HashJoinExecutor::Init() {
   left_child_->Init();
@@ -35,7 +38,6 @@ void HashJoinExecutor::Init() {
     return;
   }
   right_child_->Init();
-  // 左表构建hashtable
   Tuple tup;
   RID rid;
   // 考虑到左连接，所以用右表作为hashtable
