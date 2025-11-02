@@ -16,15 +16,19 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include "buffer/buffer_pool_manager.h"
 #include "common/config.h"
 #include "common/macros.h"
 #include "execution/execution_common.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/sort_plan.h"
+#include "storage/page/page_guard.h"
 #include "storage/table/tuple.h"
 
 namespace bustub {
 
+#define SORT_PAGE_HEADER_SIZE (sizeof(size_t) * 2)
+#define SORT_PAGE_DATA_SIZE (BUSTUB_PAGE_SIZE - SORT_PAGE_HEADER_SIZE)
 /**
  * Page to hold the intermediate data for external merge sort.
  *
@@ -32,21 +36,45 @@ namespace bustub {
  */
 class SortPage {
  public:
-  /**
-   * TODO: Define and implement the methods for reading data from and writing data to the sort
-   * page. Feel free to add other helper methods.
-   */
+  explicit SortPage(size_t tuple_size) : tuple_size_(tuple_size) {}
+  void Init(size_t tuple_size) {
+    count_ = 0;
+    tuple_size_ = tuple_size + sizeof(int32_t);  // include the size field
+  }
+  auto GetCount() const -> size_t { return count_; }
+  void SetCount(size_t count) { count_ = count; }
+  void SerializeTuples(const std::vector<Tuple> &tuples) {
+    BUSTUB_ASSERT(tuples.size() <= GetMaxCount(), "error");
+    count_ = tuples.size();
+    char *cur_ptr = data_;
+    for (const auto &tup : tuples) {
+      BUSTUB_ASSERT(tup.GetLength() + sizeof(int32_t) == tuple_size_, "error");
+      tup.SerializeTo(cur_ptr);
+      cur_ptr += tuple_size_;
+    }
+  }
+  auto GetTupleAt(size_t idx) const -> Tuple {
+    char *ptr = data_ + idx * tuple_size_;
+    Tuple tup;
+    tup.DeserializeFrom(ptr);
+    return tup;
+  }
+  auto GetMaxCount() const -> size_t { return SORT_PAGE_DATA_SIZE / tuple_size_; }
+  static auto GetMaxCount(size_t tuple_size) -> size_t { return SORT_PAGE_DATA_SIZE / (tuple_size + sizeof(int32_t)); }
+
  private:
-  /**
-   * TODO: Define the private members. You may want to have some necessary metadata for
-   * the sort page before the start of the actual data.
-   */
+  size_t count_{0};       // tuple数量
+  size_t tuple_size_{0};  // 单个tuple大小
+  char *data_{nullptr};   // 具体数据
 };
 
 /**
  * A data structure that holds the sorted tuples as a run during external merge sort.
  * Tuples might be stored in multiple pages, and tuples are ordered both within one page
  * and across pages.
+ * 一个run：表示一个归并段，（将输入划分为多个排序好的block）
+ * 一个run可能占用多个page
+ * 单页有序&多页之间也是有序的
  */
 class MergeSortRun {
  public:
@@ -54,6 +82,8 @@ class MergeSortRun {
   MergeSortRun(std::vector<page_id_t> pages, BufferPoolManager *bpm) : pages_(std::move(pages)), bpm_(bpm) {}
 
   auto GetPageCount() -> size_t { return pages_.size(); }
+
+  auto GetPages() -> std::vector<page_id_t> & { return pages_; }
 
   /** Iterator for iterating on the sorted tuples in one run. */
   class Iterator {
@@ -66,24 +96,42 @@ class MergeSortRun {
      * Advance the iterator to the next tuple. If the current sort page is exhausted, move to the
      * next sort page.
      *
-     * TODO: Implement this method.
+     * 后缀增加
      */
-    auto operator++() -> Iterator & { return *this; }
+    auto operator++() -> Iterator & {
+      BUSTUB_ASSERT(is_valid_, "iterator is not valid");
+      tuple_idx_++;
+      if (tuple_idx_ >= sort_page_->GetCount()) {
+        // 移动到下一个page
+        page_idx_++;
+        if (page_idx_ >= run_->pages_.size()) {
+          is_valid_ = false;
+          return *this;
+        }
+        auto pid = run_->pages_[page_idx_];
+        guard_ = run_->bpm_->ReadPage(pid);
+        tuple_idx_ = 0;
+      }
+      return *this;
+    }
 
     /**
      * Dereference the iterator to get the current tuple in the sorted run that the iterator is
      * pointing to.
      *
-     * TODO: Implement this method.
      */
-    auto operator*() -> Tuple { return {}; }
+    auto operator*() -> Tuple {
+      BUSTUB_ASSERT(is_valid_, "iterator is not valid");
+      BUSTUB_ASSERT(tuple_idx_ < sort_page_->GetCount(), "error");
+      return sort_page_->GetTupleAt(tuple_idx_);
+    }
 
     /**
      * Checks whether two iterators are pointing to the same tuple in the same sorted run.
      *
-     * TODO: Implement this method.
+     * 简单实现
      */
-    auto operator==(const Iterator &other) const -> bool { return false; }
+    auto operator==(const Iterator &other) const -> bool { return is_valid_ == other.is_valid_; }
 
     /**
      * Checks whether two iterators are pointing to different tuples in a sorted run or iterating
@@ -91,19 +139,25 @@ class MergeSortRun {
      *
      * TODO: Implement this method.
      */
-    auto operator!=(const Iterator &other) const -> bool { return false; }
+    auto operator!=(const Iterator &other) const -> bool { return is_valid_ != other.is_valid_; }
 
    private:
-    explicit Iterator(const MergeSortRun *run) : run_(run) {}
+    explicit Iterator(const MergeSortRun *run) : run_(run), is_valid_(true) {
+      if (run->pages_.empty()) {
+        is_valid_ = false;
+        return;
+      }
+      guard_ = run->bpm_->ReadPage(run->pages_[0]);
+      sort_page_ = guard_.As<SortPage>();
+    }
 
     /** The sorted run that the iterator is iterating on. */
-    [[maybe_unused]] const MergeSortRun *run_;
-
-    /**
-     * TODO: Add your own private members here. You may want something to record your current
-     * position in the sorted run. Also feel free to add additional constructors to initialize
-     * your private members.
-     */
+    const MergeSortRun *run_{nullptr};
+    bool is_valid_{false};
+    size_t page_idx_{0};   // 当前位于run的哪个page
+    size_t tuple_idx_{0};  // 位于当前page的哪个tuple
+    ReadPageGuard guard_;
+    const SortPage *sort_page_{nullptr};
   };
 
   /**
@@ -111,7 +165,7 @@ class MergeSortRun {
    *
    * TODO: Implement this method.
    */
-  auto Begin() -> Iterator { return {}; }
+  auto Begin() -> Iterator { return Iterator(this); }
 
   /**
    * Get an iterator pointing to the end of the sorted run, i.e. the position after the last tuple.
@@ -162,7 +216,11 @@ class ExternalMergeSortExecutor : public AbstractExecutor {
   /** Compares tuples based on the order-bys */
   TupleComparator cmp_;
 
-  /** TODO: You will want to add your own private members here. */
+  std::unique_ptr<AbstractExecutor> child_executor_;
+
+  std::vector<std::shared_ptr<MergeSortRun>> runs_;
+
+  MergeSortRun::Iterator iter_;
 };
 
 }  // namespace bustub
