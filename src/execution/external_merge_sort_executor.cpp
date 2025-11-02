@@ -65,15 +65,13 @@ void ExternalMergeSortExecutor<K>::Init() {
   TupleComparator comp(order_bys);
   std::vector<Tuple> tuples;
 
-  auto write_page = [this, &bpm, &tuples]() {
+  auto write_page = [&bpm, &tuples](std::shared_ptr<MergeSortRun> &cur_run) {
     // page满，写入
     page_id_t pid = bpm->NewPage();
-    std::shared_ptr<MergeSortRun> cur_run;
-    cur_run = std::make_shared<MergeSortRun>(std::vector<page_id_t>(), bpm);
     cur_run->GetPages().emplace_back(pid);
-    runs_.emplace_back(cur_run);
     auto guard = bpm->WritePage(pid);
     auto sort_page = guard.AsMut<SortPage>();
+    sort_page->Init(tuples.front().GetLength());
     sort_page->SerializeTuples(tuples);
     tuples.clear();
   };
@@ -84,11 +82,17 @@ void ExternalMergeSortExecutor<K>::Init() {
       tuples.emplace_back(std::move(tup));
       continue;
     }
-    write_page();
+    SortTuples(tuples, comp, order_bys, schema);
+    std::shared_ptr<MergeSortRun> cur_run = std::make_shared<MergeSortRun>(std::vector<page_id_t>{}, bpm);
+    write_page(cur_run);
+    runs_.emplace_back(cur_run);
     tuples.emplace_back(std::move(tup));
   }
   if (!tuples.empty()) {
-    write_page();
+    SortTuples(tuples, comp, order_bys, schema);
+    std::shared_ptr<MergeSortRun> cur_run = std::make_shared<MergeSortRun>(std::vector<page_id_t>{}, bpm);
+    write_page(cur_run);
+    runs_.emplace_back(cur_run);
   }
   if (runs_.empty()) {
     return;
@@ -98,13 +102,15 @@ void ExternalMergeSortExecutor<K>::Init() {
   tuples.clear();
   while (runs_.size() > 1) {
     std::vector<std::shared_ptr<MergeSortRun>> old_runs = std::move(runs_);
-    for (size_t start_idx = 0; start_idx < runs_.size(); start_idx += K) {
+    for (size_t start_idx = 0; start_idx < old_runs.size(); start_idx += K) {
       // 完成一次归并
-      std::shared_ptr<MergeSortRun> &r1 = runs_[start_idx];
-      if (start_idx + 1 >= runs_.size()) {
+      std::shared_ptr<MergeSortRun> &r1 = old_runs[start_idx];
+      if (start_idx + 1 >= old_runs.size()) {
         runs_.emplace_back(r1);
+        break;
       }
-      std::shared_ptr<MergeSortRun> &r2 = runs_[start_idx + 1];
+      std::shared_ptr<MergeSortRun> &r2 = old_runs[start_idx + 1];
+      std::shared_ptr<MergeSortRun> cur_run = std::make_shared<MergeSortRun>(std::vector<page_id_t>{}, bpm);
       // 归并
       auto iter1 = r1->Begin();
       auto iter2 = r2->Begin();
@@ -114,7 +120,7 @@ void ExternalMergeSortExecutor<K>::Init() {
         auto k1 = GenerateSortKey(t1, order_bys, schema);
         auto k2 = GenerateSortKey(t2, order_bys, schema);
         if (tuples.size() >= max_tuple_count) {
-          write_page();
+          write_page(cur_run);
         }
         if (comp(SortEntry(k1, t1), SortEntry(k2, t2))) {
           tuples.emplace_back(std::move(t1));
@@ -126,21 +132,22 @@ void ExternalMergeSortExecutor<K>::Init() {
       }
       while (iter1 != r1->End()) {
         if (tuples.size() >= max_tuple_count) {
-          write_page();
+          write_page(cur_run);
         }
         tuples.emplace_back(*iter1);
         ++iter1;
       }
       while (iter2 != r2->End()) {
         if (tuples.size() >= max_tuple_count) {
-          write_page();
+          write_page(cur_run);
         }
         tuples.emplace_back(*iter2);
         ++iter2;
       }
       if (!tuples.empty()) {
-        write_page();
+        write_page(cur_run);
       }
+      runs_.emplace_back(cur_run);
     }
     for (auto &run : old_runs) {
       for (auto pid : run->GetPages()) {
@@ -162,6 +169,7 @@ auto ExternalMergeSortExecutor<K>::Next(Tuple *tuple, RID *rid) -> bool {
   auto &run = runs_.front();
   if (iter_ != run->End()) {
     *tuple = *iter_;
+    ++iter_;
     return true;
   }
   return false;

@@ -54,7 +54,7 @@ class SortPage {
     }
   }
   auto GetTupleAt(size_t idx) const -> Tuple {
-    char *ptr = data_ + idx * tuple_size_;
+    char *ptr = const_cast<char *>(data_) + idx * tuple_size_;
     Tuple tup;
     tup.DeserializeFrom(ptr);
     return tup;
@@ -65,7 +65,7 @@ class SortPage {
  private:
   size_t count_{0};       // tuple数量
   size_t tuple_size_{0};  // 单个tuple大小
-  char *data_{nullptr};   // 具体数据
+  char data_[0];          // 具体数据
 };
 
 /**
@@ -143,11 +143,12 @@ class MergeSortRun {
 
    private:
     explicit Iterator(const MergeSortRun *run) : run_(run), is_valid_(true) {
-      if (run->pages_.empty()) {
+      BUSTUB_ASSERT(run_ != nullptr, "MergeSortRun is nullptr");
+      if (run_->pages_.empty()) {
         is_valid_ = false;
         return;
       }
-      guard_ = run->bpm_->ReadPage(run->pages_[0]);
+      guard_ = run_->bpm_->ReadPage(run_->pages_[0]);
       sort_page_ = guard_.As<SortPage>();
     }
 

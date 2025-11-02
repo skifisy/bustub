@@ -45,6 +45,20 @@ auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entr
           break;
       }
     }
+    if (v1.CompareGreaterThan(k2[i]) == CmpBool::CmpTrue) {
+      switch (order_bys_[i].first) {
+        case OrderByType::ASC:
+        case OrderByType::DEFAULT:
+          return false;
+          break;
+        case OrderByType::DESC:
+          return true;
+          break;
+        default:
+          BUSTUB_ASSERT(false, "error");
+          break;
+      }
+    }
   }
   return true;
 }

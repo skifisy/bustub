@@ -35,7 +35,6 @@ void IndexScanExecutor::Init() {
   current_idx_ = 0;
 }
 
-// 实现点查询就行了
 auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   if (is_point_scan_ && current_idx_ >= plan_->pred_keys_.size()) {
     return false;
