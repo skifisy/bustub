@@ -20,11 +20,49 @@
 #include <vector>
 
 #include "catalog/schema.h"
+#include "common/util/hash_util.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
 #include "type/value.h"
+
+namespace bustub {
+struct JoinKey {
+  std::vector<Value> join_keys_;
+  auto operator==(const JoinKey &other) const -> bool {
+    for (uint32_t i = 0; i < other.join_keys_.size(); i++) {
+      if (join_keys_[i].CompareEquals(other.join_keys_[i]) != CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+// 可能一个joinkey对应多个value
+struct JoinValue {
+  std::vector<Value> values_;
+};
+};  // namespace bustub
+
+namespace std {
+
+/** Implements std::hash on AggregateKey */
+template <>
+struct hash<bustub::JoinKey> {
+  auto operator()(const bustub::JoinKey &join_key) const -> std::size_t {
+    size_t curr_hash = 0;
+    for (const auto &key : join_key.join_keys_) {
+      if (!key.IsNull()) {
+        curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&key));
+      }
+    }
+    return curr_hash;
+  }
+};
+
+}  // namespace std
 
 namespace bustub {
 
