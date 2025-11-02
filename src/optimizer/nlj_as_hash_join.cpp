@@ -20,8 +20,7 @@
 namespace bustub {
 
 struct OHashJoinContext {
-  AbstractExpressionRef predicate_;  // 连接条件
-  AbstractPlanNodeRef left_;         // 左表
+  AbstractPlanNodeRef left_;  // 左表
   AbstractPlanNodeRef right_;
   /** The expression to compute the left JOIN key */
   std::vector<AbstractExpressionRef> left_key_expressions_;
@@ -30,26 +29,24 @@ struct OHashJoinContext {
   bool use_hash_join_;
 };
 
-void OptimizeHashJoin(OHashJoinContext &ctx) {
+void OptimizeHashJoin(OHashJoinContext &ctx, const AbstractExpressionRef &predicate) {
   if (!ctx.use_hash_join_) {
     return;
   }
 
-  auto logic_expr = std::dynamic_pointer_cast<LogicExpression>(ctx.predicate_);
+  auto logic_expr = std::dynamic_pointer_cast<LogicExpression>(predicate);
   if (logic_expr != nullptr) {
     if (logic_expr->logic_type_ != LogicType::And) {
       ctx.use_hash_join_ = false;
       return;
     }
     BUSTUB_ASSERT(logic_expr->GetChildren().size() == 2, "logic expr should have 2 children");
-    ctx.predicate_ = logic_expr->GetChildAt(0);
-    OptimizeHashJoin(ctx);
-    ctx.predicate_ = logic_expr->GetChildAt(1);
-    OptimizeHashJoin(ctx);
+    OptimizeHashJoin(ctx, logic_expr->GetChildAt(0));
+    OptimizeHashJoin(ctx, logic_expr->GetChildAt(1));
     return;
   }
 
-  auto comparison_expr = std::dynamic_pointer_cast<ComparisonExpression>(ctx.predicate_);
+  auto comparison_expr = std::dynamic_pointer_cast<ComparisonExpression>(predicate);
   if (comparison_expr != nullptr) {
     if (comparison_expr->comp_type_ != ComparisonType::Equal) {
       ctx.use_hash_join_ = false;
@@ -91,17 +88,16 @@ auto Optimizer::OptimizeNLJAsHashJoin(const AbstractPlanNodeRef &plan) -> Abstra
   if (optimized_plan->GetType() == PlanType::NestedLoopJoin) {
     const auto &nlj_plan = dynamic_cast<const NestedLoopJoinPlanNode &>(*optimized_plan);
     BUSTUB_ENSURE(nlj_plan.children_.size() == 2, "NLJ should have exactly 2 children.");
-    OHashJoinContext context = {nlj_plan.Predicate(), nlj_plan.GetLeftPlan(), nlj_plan.GetRightPlan(), {}, {}, true};
-    OptimizeHashJoin(context);
-    if(context.use_hash_join_) {
-      return std::make_shared<HashJoinPlanNode>(
-        nlj_plan.output_schema_, nlj_plan.GetLeftPlan(), nlj_plan.GetRightPlan(),
-        std::move(context.left_key_expressions_), std::move(context.right_key_expressions_), nlj_plan.GetJoinType()
-      );
+    OHashJoinContext context = {nlj_plan.GetLeftPlan(), nlj_plan.GetRightPlan(), {}, {}, true};
+    OptimizeHashJoin(context, nlj_plan.Predicate());
+    if (context.use_hash_join_) {
+      return std::make_shared<HashJoinPlanNode>(nlj_plan.output_schema_, nlj_plan.GetLeftPlan(),
+                                                nlj_plan.GetRightPlan(), std::move(context.left_key_expressions_),
+                                                std::move(context.right_key_expressions_), nlj_plan.GetJoinType());
     }
   }
 
-  return plan;
+  return optimized_plan;
 }
 
 }  // namespace bustub

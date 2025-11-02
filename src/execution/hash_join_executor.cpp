@@ -46,7 +46,7 @@ void HashJoinExecutor::Init() {
     for (auto &expr : plan_->RightJoinKeyExpressions()) {
       join_key.join_keys_.emplace_back(expr->Evaluate(&tup, right_child_->GetOutputSchema()));
     }
-    if (map_.count(join_key) != 0) {
+    if (map_.count(join_key) == 0) {
       map_.emplace(std::move(join_key), std::vector<JoinValue>{MakeJoinValue(tup, right_child_->GetOutputSchema())});
     } else {
       map_[join_key].emplace_back(MakeJoinValue(tup, right_child_->GetOutputSchema()));
