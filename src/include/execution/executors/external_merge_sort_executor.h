@@ -148,10 +148,10 @@ class MergeSortRun {
       BUSTUB_ASSERT(run_ != nullptr, "MergeSortRun is nullptr");
       if (run_->pages_.empty()) {
         is_valid_ = false;
-        return;
+      } else {
+        guard_ = run_->bpm_->ReadPage(run_->pages_[0]);
+        sort_page_ = guard_.As<SortPage>();
       }
-      guard_ = run_->bpm_->ReadPage(run_->pages_[0]);
-      sort_page_ = guard_.As<SortPage>();
     }
 
     /** The sorted run that the iterator is iterating on. */

@@ -44,7 +44,6 @@ void SortTuples(std::vector<Tuple> &tuples, TupleComparator &comp, const std::ve
 
 template <size_t K>
 void ExternalMergeSortExecutor<K>::Init() {
-  BUSTUB_ASSERT(K == 2, "only support for 2 way sort");
   if (!runs_.empty()) {
     BUSTUB_ASSERT(runs_.size() == 1, "error");
     iter_ = runs_.front()->Begin();
@@ -101,7 +100,8 @@ void ExternalMergeSortExecutor<K>::Init() {
   // step2: 归并排序
   tuples.clear();
   while (runs_.size() > 1) {
-    std::vector<std::shared_ptr<MergeSortRun>> old_runs = std::move(runs_);
+    std::vector<std::shared_ptr<MergeSortRun>> old_runs;
+    old_runs.swap(runs_);
     for (size_t start_idx = 0; start_idx < old_runs.size(); start_idx += K) {
       // 完成一次归并
       std::shared_ptr<MergeSortRun> &r1 = old_runs[start_idx];

@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "buffer/buffer_pool_manager.h"
+#include "common/config.h"
 #include "storage/page/page.h"
 
 namespace bustub {
@@ -69,7 +70,7 @@ class ReadPageGuard {
                          std::shared_ptr<std::mutex> bpm_latch);
 
   /** @brief The page ID of the page we are guarding. */
-  page_id_t page_id_;
+  page_id_t page_id_{INVALID_PAGE_ID};
 
   /**
    * @brief The frame that holds the page this guard is protecting.

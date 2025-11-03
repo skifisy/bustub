@@ -174,13 +174,11 @@ auto BufferPoolManager::NewPage() -> page_id_t {
  * @return `false` if the page exists but could not be deleted, `true` if the page didn't exist or deletion succeeded.
  */
 auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
-  // 从内存和磁盘中删除该page
-  // 如果被pinned了，那么返回false
-
-  // 注意所有用到page和page元信息的地方！
   std::lock_guard<std::mutex> lock_guard(*bpm_latch_);
   auto page_it = page_table_.find(page_id);
   if (page_it == page_table_.end()) {
+    // 磁盘中删除
+    disk_scheduler_->DeallocatePage(page_id);
     return true;
   }
   frame_id_t frame_id = page_it->second;
