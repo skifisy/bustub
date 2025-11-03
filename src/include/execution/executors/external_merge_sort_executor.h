@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 #include "buffer/buffer_pool_manager.h"
+#include "catalog/schema.h"
 #include "common/config.h"
 #include "common/macros.h"
 #include "execution/execution_common.h"
@@ -110,6 +111,7 @@ class MergeSortRun {
         }
         auto pid = run_->pages_[page_idx_];
         guard_ = run_->bpm_->ReadPage(pid);
+        sort_page_ = guard_.As<SortPage>();
         tuple_idx_ = 0;
       }
       return *this;
@@ -174,6 +176,18 @@ class MergeSortRun {
    * TODO: Implement this method.
    */
   auto End() -> Iterator { return {}; }
+
+  auto ToString(const Schema &schema) {
+    for (auto pid : pages_) {
+      std::cout << "-------------------------page start-----pid:" << pid << "------------------------------"
+                << std::endl;
+      auto guard = bpm_->ReadPage(pid);
+      auto sort_page = guard.As<SortPage>();
+      for (size_t i = 0; i < sort_page->GetCount(); i++) {
+        std::cout << sort_page->GetTupleAt(i).ToString(&schema) << std::endl;
+      }
+    }
+  }
 
  private:
   /** The page IDs of the sort pages that store the sorted tuples. */
