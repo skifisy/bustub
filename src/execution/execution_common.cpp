@@ -12,14 +12,21 @@
 
 #include <cstddef>
 #include <optional>
+#include <shared_mutex>
+#include <sstream>
+#include <string>
 
 #include "catalog/catalog.h"
 #include "catalog/column.h"
+#include "common/config.h"
 #include "common/macros.h"
+#include "common/rid.h"
+#include "concurrency/transaction.h"
 #include "concurrency/transaction_manager.h"
 #include "execution/execution_common.h"
 #include "fmt/core.h"
 #include "storage/table/table_heap.h"
+#include "storage/table/tuple.h"
 #include "type/value.h"
 
 namespace bustub {
@@ -107,10 +114,8 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
 
   std::vector<Value> values;
   values.resize(schema->GetColumnCount());
-  if (!base_meta.is_deleted_) {
-    for (size_t i = 0; i < schema->GetColumnCount(); i++) {
-      values[i] = base_tuple.GetValue(schema, i);
-    }
+  for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+    values[i] = base_tuple.GetValue(schema, i);
   }
 
   // 对base_tuple依次应用undolog
@@ -153,7 +158,38 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
  */
 auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tuple, std::optional<UndoLink> undo_link,
                      Transaction *txn, TransactionManager *txn_mgr) -> std::optional<std::vector<UndoLog>> {
-  UNIMPLEMENTED("not implemented");
+  timestamp_t read_time = txn->GetReadTs();
+  timestamp_t txn_id = txn->GetTransactionTempTs();
+  std::vector<UndoLog> undo_logs;
+
+  // case 1: table heap版本就是要读的版本
+  if (base_meta.ts_ <= read_time) {
+    return undo_logs;
+  }
+  // case 3: table heap的版本恰好是当前事务修改，但是尚未提交的版本
+  if (base_meta.ts_ == txn_id) {
+    return undo_logs;
+  }
+
+  // case2: 需要根据版本链，找到正确的版本
+  bool found = false;
+  while (undo_link.has_value()) {
+    auto undo_log_opt = txn_mgr->GetUndoLogOptional(*undo_link);
+    if (undo_log_opt.has_value()) {
+      UndoLog &undo_log = *undo_log_opt;
+      undo_logs.emplace_back(undo_log);
+      undo_link = undo_log.prev_version_;
+      // 判断是否找到对应的版本
+      if (undo_log.ts_ <= read_time || undo_log.ts_ == txn_id) {
+        found = true;
+        break;
+      }
+    } else {
+      undo_link = std::nullopt;
+    }
+  }
+
+  return found ? std::optional(undo_logs) : std::nullopt;
 }
 
 /**
@@ -196,11 +232,11 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   // always use stderr for printing logs...
   fmt::println(stderr, "debug_hook: {}", info);
 
-  fmt::println(stderr,
-               "You see this line of text because you have not implemented "
-               "`TxnMgrDbg`. You should do this once you have "
-               "finished task 2. Implementing this helper function will save "
-               "you a lot of time for debugging in later tasks.");
+  // fmt::println(stderr,
+  //              "You see this line of text because you have not implemented "
+  //              "`TxnMgrDbg`. You should do this once you have "
+  //              "finished task 2. Implementing this helper function will save "
+  //              "you a lot of time for debugging in later tasks.");
 
   // We recommend implementing this function as traversing the table heap and
   // print the version chain. An example output of our reference solution:
@@ -216,6 +252,68 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   // RID=0/3 ts=txn6 <del marker> tuple=(<NULL>, <NULL>, <NULL>)
   //   txn6@0 (6, <NULL>, <NULL>) ts=2
   //   txn3@1 (7, _, _) ts=1
+  auto to_readable_ts = [](timestamp_t time) -> std::string {
+    bool is_txn = static_cast<bool>(time & TXN_START_ID);
+    return is_txn ? std::string("txn") + std::to_string(time ^ TXN_START_ID) : std::to_string(time);
+  };
+  auto schema = &table_info->schema_;
+  auto log_to_string = [&](const UndoLog &log) -> std::string {
+    if (log.is_deleted_) {
+      return "<del>";
+    }
+    std::stringstream ss;
+    ss << "(";
+    std::vector<Column> cols;
+    for (size_t i = 0; i < log.modified_fields_.size(); i++) {
+      if (log.modified_fields_[i]) {
+        cols.emplace_back(schema->GetColumn(i));
+      }
+    }
+    size_t idx = 0;
+    Schema partial_schema(cols);
+    for (size_t i = 0; i < log.modified_fields_.size(); i++) {
+      if (log.modified_fields_[i]) {
+        auto value = log.tuple_.GetValue(&partial_schema, idx);
+        if (value.IsNull()) {
+          ss << "NULL";
+        } else {
+          ss << value.ToString();
+        }
+        idx++;
+      } else {
+        ss << "_";
+      }
+      if (i != log.modified_fields_.size() - 1) {
+        ss << ", ";
+      }
+    }
+    ss << ")";
+    return ss.str();
+  };
+
+  // 遍历table_heap的所有tuple，打印每个tuple的所有version
+  auto table_iter = table_heap->MakeIterator();
+  for (; !table_iter.IsEnd(); ++table_iter) {
+    RID rid = table_iter.GetRID();
+    auto [meta, tuple] = table_iter.GetTuple();
+    fmt::println(stderr, "RID={}/{} ts={} tuple={}", rid.GetPageId(), rid.GetSlotNum(), to_readable_ts(meta.ts_),
+                 tuple.ToString(schema));
+
+    // 处理所有版本
+    std::optional<UndoLink> undo_link = txn_mgr->GetUndoLink(rid);
+    while (undo_link.has_value()) {
+      auto undo_log_opt = txn_mgr->GetUndoLogOptional(*undo_link);
+      if (undo_log_opt.has_value()) {
+        const UndoLog &undo_log = *undo_log_opt;
+        // todo: 已提交：查transaction表，获取txn id
+        // 未提交：就是去掉次高位
+        fmt::println(stderr, "\ttxn{}@{} {} ts={}", "?", "?", log_to_string(undo_log), std::to_string(undo_log.ts_));
+        undo_link = undo_log.prev_version_;
+      } else {
+        undo_link = std::nullopt;
+      }
+    }
+  }
 }
 
 }  // namespace bustub
