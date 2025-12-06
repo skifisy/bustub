@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unordered_map>
+#include <map>
 
 #include "concurrency/transaction.h"
 #include "storage/table/tuple.h"
@@ -9,7 +9,7 @@ namespace bustub {
 
 /**
  * @brief tracks all the read timestamps.
- *
+ * 用于跟踪当前系统中，所有活跃事务的最小读时间戳（用于垃圾回收）
  */
 class Watermark {
  public:
@@ -34,7 +34,7 @@ class Watermark {
 
   timestamp_t watermark_;
 
-  std::unordered_map<timestamp_t, int> current_reads_;
+  std::map<timestamp_t, int> current_reads_;
 };
 
 };  // namespace bustub

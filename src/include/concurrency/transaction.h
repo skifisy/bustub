@@ -40,6 +40,10 @@ class TransactionManager;
 
 /**
  * Transaction State.
+ * RUNNING - The transaction is running
+ * TAINTED - The transaction has encountered a conflict and can only abort 受污染状态，检测到冲突
+ * COMMITTED - The transaction has committed
+ * ABORTED - The transaction has aborted
  */
 enum class TransactionState { RUNNING = 0, TAINTED, COMMITTED = 100, ABORTED };
 
@@ -102,6 +106,7 @@ class Transaction {
   inline auto GetTransactionId() const -> txn_id_t { return txn_id_; }
 
   /** @return the id of this transaction, stripping the highest bit. NEVER use/store this value unless for debugging. */
+  // 调试使用的事务id
   inline auto GetTransactionIdHumanReadable() const -> txn_id_t { return txn_id_ ^ TXN_START_ID; }
 
   /** @return the temporary timestamp of this transaction */

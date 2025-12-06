@@ -26,6 +26,7 @@
 #include "common/exception.h"
 #include "common/macros.h"
 #include "concurrency/transaction.h"
+#include "concurrency/watermark.h"
 #include "execution/execution_common.h"
 #include "storage/table/table_heap.h"
 #include "storage/table/tuple.h"
@@ -43,7 +44,9 @@ auto TransactionManager::Begin(IsolationLevel isolation_level) -> Transaction * 
   txn_map_.insert(std::make_pair(txn_id, std::move(txn)));
 
   // TODO(fall2023): set the timestamps here. Watermark updated below.
-
+  // 1. 设置txn的read timestamp
+  txn_ref->read_ts_ = last_commit_ts_.load();
+  // 2. 更新watermark
   running_txns_.AddTxn(txn_ref->read_ts_);
   return txn_ref;
 }

@@ -16,17 +16,20 @@
 
 namespace bustub {
 
-TEST(TxnTsTest, DISABLED_WatermarkPerformance) {  // NOLINT
+TEST(TxnTsTest, WatermarkPerformance) {  // NOLINT
   const int txn_n = 1000000;
   {
     auto watermark = Watermark(0);
+    // 1. 添加 txn_n 个事务
     for (int i = 0; i < txn_n; i++) {
       watermark.AddTxn(i);
       ASSERT_EQ(watermark.GetWatermark(), 0);
     }
+    // 2. 移除事务
     for (int i = 0; i < txn_n; i++) {
       watermark.UpdateCommitTs(i + 1);
       watermark.RemoveTxn(i);
+      // 因为移除了最早的事务i，所以水位应该向下推进
       ASSERT_EQ(watermark.GetWatermark(), i + 1);
     }
   }
@@ -48,7 +51,7 @@ TEST(TxnTsTest, DISABLED_WatermarkPerformance) {  // NOLINT
   }
 }
 
-TEST(TxnTsTest, DISABLED_TimestampTracking) {  // NOLINT
+TEST(TxnTsTest, TimestampTracking) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
 
   auto txn0 = bustub->txn_manager_->Begin();
