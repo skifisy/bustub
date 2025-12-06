@@ -13,7 +13,7 @@ auto Watermark::AddTxn(timestamp_t read_ts) -> void {
     throw Exception("read ts < commit ts");
   }
   if (read_ts < watermark_ || watermark_ == INVALID_TS) {
-    watermark_ = read_ts; 
+    watermark_ = read_ts;
   }
   auto it = current_reads_.find(read_ts);
   if (it != current_reads_.end()) {

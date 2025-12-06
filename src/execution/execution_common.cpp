@@ -10,13 +10,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "execution/execution_common.h"
+#include <cstddef>
+#include <optional>
 
 #include "catalog/catalog.h"
+#include "catalog/column.h"
 #include "common/macros.h"
 #include "concurrency/transaction_manager.h"
+#include "execution/execution_common.h"
 #include "fmt/core.h"
 #include "storage/table/table_heap.h"
+#include "type/value.h"
 
 namespace bustub {
 
@@ -77,23 +81,66 @@ auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, 
  */
 
 /**
- * @brief Reconstruct a tuple by applying the provided undo logs from the base tuple. All logs in the undo_logs are
- * applied regardless of the timestamp
+ * @brief Reconstruct a tuple by applying the provided undo logs from the base
+ * tuple. All logs in the undo_logs are applied regardless of the timestamp
  *
  * @param schema The schema of the base tuple and the returned tuple.
  * @param base_tuple The base tuple to start the reconstruction from.
  * @param base_meta The metadata of the base tuple.
- * @param undo_logs The list of undo logs to apply during the reconstruction, the front is applied first.
- * @return An optional tuple that represents the reconstructed tuple. If the tuple is deleted as the result, returns
- * std::nullopt.
+ * @param undo_logs The list of undo logs to apply during the reconstruction,
+ * the front is applied first.
+ * @return An optional tuple that represents the reconstructed tuple. If the
+ * tuple is deleted as the result, returns std::nullopt.
  */
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  UNIMPLEMENTED("not implemented");
+  // 如果最后的undo log是删除，那么无需重建，直接返回空值
+  if (undo_logs.empty()) {
+    if (base_meta.is_deleted_) {
+      return std::nullopt;
+    }
+    return base_tuple;
+  }
+  if (undo_logs.back().is_deleted_) {
+    return std::nullopt;
+  }
+
+  std::vector<Value> values;
+  values.resize(schema->GetColumnCount());
+  if (!base_meta.is_deleted_) {
+    for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+      values[i] = base_tuple.GetValue(schema, i);
+    }
+  }
+
+  // 对base_tuple依次应用undolog
+  for (auto &undo_log : undo_logs) {
+    if (undo_log.is_deleted_) {
+      continue;
+    }
+    std::vector<Column> modified_cols;
+    std::vector<size_t> idx;  // 对应原始schema的位置
+    for (size_t i = 0; i < undo_log.modified_fields_.size(); i++) {
+      if (undo_log.modified_fields_[i]) {
+        modified_cols.emplace_back(schema->GetColumn(i));
+        idx.emplace_back(i);
+      }
+    }
+    // 构建partial schema
+    Schema partial_schema(modified_cols);
+    // 还原原始的values
+    for (size_t i = 0; i < partial_schema.GetColumnCount(); i++) {
+      size_t base_idx = idx[i];
+      values[base_idx] = undo_log.tuple_.GetValue(&partial_schema, i);
+    }
+  }
+
+  return Tuple(values, schema);
 }
 
 /**
- * @brief Collects the undo logs sufficient to reconstruct the tuple w.r.t. the txn.
+ * @brief Collects the undo logs sufficient to reconstruct the tuple w.r.t. the
+ * txn.
  *
  * @param rid The RID of the tuple.
  * @param base_meta The metadata of the base tuple.
@@ -101,8 +148,8 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
  * @param undo_link The undo link to the latest undo log.
  * @param txn The transaction.
  * @param txn_mgr The transaction manager.
- * @return An optional vector of undo logs to pass to ReconstructTuple(). std::nullopt if the tuple did not exist at the
- * time.
+ * @return An optional vector of undo logs to pass to ReconstructTuple().
+ * std::nullopt if the tuple did not exist at the time.
  */
 auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tuple, std::optional<UndoLink> undo_link,
                      Transaction *txn, TransactionManager *txn_mgr) -> std::optional<std::vector<UndoLog>> {
@@ -110,12 +157,14 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
 }
 
 /**
- * @brief Generates a new undo log as the transaction tries to modify this tuple at the first time.
+ * @brief Generates a new undo log as the transaction tries to modify this tuple
+ * at the first time.
  *
  * @param schema The schema of the table.
- * @param base_tuple The base tuple before the update, the one retrieved from the table heap. nullptr if the tuple is
- * deleted.
- * @param target_tuple The target tuple after the update. nullptr if this is a deletion.
+ * @param base_tuple The base tuple before the update, the one retrieved from
+ * the table heap. nullptr if the tuple is deleted.
+ * @param target_tuple The target tuple after the update. nullptr if this is a
+ * deletion.
  * @param ts The timestamp of the base tuple.
  * @param prev_version The undo link to the latest undo log of this tuple.
  * @return The generated undo log.
@@ -126,12 +175,14 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
 }
 
 /**
- * @brief Generate the updated undo log to replace the old one, whereas the tuple is already modified by this txn once.
+ * @brief Generate the updated undo log to replace the old one, whereas the
+ * tuple is already modified by this txn once.
  *
  * @param schema The schema of the table.
- * @param base_tuple The base tuple before the update, the one retrieved from the table heap. nullptr if the tuple is
- * deleted.
- * @param target_tuple The target tuple after the update. nullptr if this is a deletion.
+ * @param base_tuple The base tuple before the update, the one retrieved from
+ * the table heap. nullptr if the tuple is deleted.
+ * @param target_tuple The target tuple after the update. nullptr if this is a
+ * deletion.
  * @param log The original undo log.
  * @return The updated undo log.
  */
@@ -145,13 +196,14 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   // always use stderr for printing logs...
   fmt::println(stderr, "debug_hook: {}", info);
 
-  fmt::println(
-      stderr,
-      "You see this line of text because you have not implemented `TxnMgrDbg`. You should do this once you have "
-      "finished task 2. Implementing this helper function will save you a lot of time for debugging in later tasks.");
+  fmt::println(stderr,
+               "You see this line of text because you have not implemented "
+               "`TxnMgrDbg`. You should do this once you have "
+               "finished task 2. Implementing this helper function will save "
+               "you a lot of time for debugging in later tasks.");
 
-  // We recommend implementing this function as traversing the table heap and print the version chain. An example output
-  // of our reference solution:
+  // We recommend implementing this function as traversing the table heap and
+  // print the version chain. An example output of our reference solution:
   //
   // debug_hook: before verify scan
   // RID=0/0 ts=txn8 tuple=(1, <NULL>, <NULL>)
