@@ -75,7 +75,8 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
 
   // TODO(fall2023): set commit timestamp + update last committed timestamp here.
-
+  // 获取提交时间戳
+  txn->commit_ts_ = ++last_commit_ts_;
   txn->state_ = TransactionState::COMMITTED;
   running_txns_.UpdateCommitTs(txn->commit_ts_);
   running_txns_.RemoveTxn(txn->read_ts_);

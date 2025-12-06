@@ -4,6 +4,7 @@
 #include "common/exception.h"
 #include "common/macros.h"
 #include "concurrency/watermark.h"
+#include "storage/table/tuple.h"
 
 namespace bustub {
 
@@ -11,8 +12,8 @@ auto Watermark::AddTxn(timestamp_t read_ts) -> void {
   if (read_ts < commit_ts_) {
     throw Exception("read ts < commit ts");
   }
-  if (read_ts < watermark_) {
-    watermark_ = read_ts;
+  if (read_ts < watermark_ || watermark_ == INVALID_TS) {
+    watermark_ = read_ts; 
   }
   auto it = current_reads_.find(read_ts);
   if (it != current_reads_.end()) {
@@ -30,7 +31,11 @@ auto Watermark::RemoveTxn(timestamp_t read_ts) -> void {
     current_reads_.erase(it);
     if (read_ts == watermark_) {
       // 更新水位
-      watermark_ = current_reads_.begin()->first;
+      if (current_reads_.empty()) {
+        watermark_ = INVALID_TS;
+      } else {
+        watermark_ = current_reads_.begin()->first;
+      }
     }
   }
 }
