@@ -296,8 +296,8 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   for (; !table_iter.IsEnd(); ++table_iter) {
     RID rid = table_iter.GetRID();
     auto [meta, tuple] = table_iter.GetTuple();
-    fmt::println(stderr, "RID={}/{} ts={} tuple={}", rid.GetPageId(), rid.GetSlotNum(), to_readable_ts(meta.ts_),
-                 tuple.ToString(schema));
+    fmt::println(stderr, "RID={}/{} ts={} {}tuple={}", rid.GetPageId(), rid.GetSlotNum(), to_readable_ts(meta.ts_),
+                 meta.is_deleted_ ? "<del marker> " : "", tuple.ToString(schema));
 
     // 处理所有版本
     std::optional<UndoLink> undo_link = txn_mgr->GetUndoLink(rid);
