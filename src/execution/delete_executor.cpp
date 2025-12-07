@@ -44,8 +44,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   RID r;
   auto txn = exec_ctx_->GetTransaction();
   if (txn != nullptr) {
+    auto txn_mgr = exec_ctx_->GetTransactionManager();
     while (child_executor_->Next(&tup, &r)) {
-      auto txn_mgr = exec_ctx_->GetTransactionManager();
       auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
       // 1. 检查write-write冲突
       if (IsWriteWriteConflict(txn, &base_meta)) {
