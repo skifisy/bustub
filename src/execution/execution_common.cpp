@@ -283,13 +283,15 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 
   for (size_t i = 0; i < schema->GetColumnCount(); i++) {
     // 如果该列被修改了，从undo_log中获取原值
-    Value origin;
+    // 推荐undolog只进行增量，不删除变化的值（容易发现并发bug）
     if (log.modified_fields_[i]) {
-      origin = log.tuple_.GetValue(&undo_schema, idx);
+      modified_fields[i] = true;
+      partial_cols.emplace_back(schema->GetColumn(i));
+      modified_vals.emplace_back(log.tuple_.GetValue(&undo_schema, idx));
       idx++;
-    } else {
-      origin = base_tuple->GetValue(schema, i);
+      continue;
     }
+    Value origin = base_tuple->GetValue(schema, i);
     Value target = target_tuple->GetValue(schema, i);
     if (!origin.CompareExactlyEquals(target)) {
       modified_fields[i] = true;
@@ -378,13 +380,23 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
       }
 
       const UndoLog &undo_log = *undo_log_opt;
-      // todo: 已提交：查transaction表，获取txn id
-      // 未提交：就是去掉次高位
-      fmt::println(stderr, "\ttxn{}@{} {} ts={}", "?", "?", log_to_string(undo_log), to_readable_ts(undo_log.ts_));
-
+      fmt::println(stderr, "\ttxn{}@{} {} ts={}", undo_link->prev_txn_ ^ TXN_START_ID, undo_link->prev_log_idx_,
+                   log_to_string(undo_log), to_readable_ts(undo_log.ts_));
       undo_link = undo_log.prev_version_;
     }
   }
+}
+
+auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool {
+  // case1: 一个事务修改另外一个尚未提交事务的数据
+  if ((base_meta->ts_ & TXN_START_ID) != 0 && base_meta->ts_ != txn->GetTransactionTempTs()) {
+    return true;
+  }
+  // case2: 一个事务想要修改已提交的数据，但它的读时间戳还是旧版本的
+  if ((base_meta->ts_ & TXN_START_ID) == 0 && txn->GetReadTs() < base_meta->ts_) {
+    return true;
+  }
+  return false;
 }
 
 }  // namespace bustub

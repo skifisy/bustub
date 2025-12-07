@@ -18,7 +18,10 @@
 #include "binder/bound_order_by.h"
 #include "catalog/catalog.h"
 #include "catalog/schema.h"
+#include "common/config.h"
+#include "common/rid.h"
 #include "concurrency/transaction.h"
+#include "storage/table/table_heap.h"
 #include "storage/table/tuple.h"
 
 namespace bustub {
@@ -66,6 +69,8 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
                TableHeap *table_heap);
+
+auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool;
 
 // TODO(P4): Add new functions as needed... You are likely need to define some more functions.
 //
