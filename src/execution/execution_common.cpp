@@ -15,6 +15,7 @@
 #include <shared_mutex>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "catalog/catalog.h"
 #include "catalog/column.h"
@@ -207,7 +208,34 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
  */
 auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple, timestamp_t ts,
                         UndoLink prev_version) -> UndoLog {
-  UNIMPLEMENTED("not implemented");
+  // case1: Insert
+  if (base_tuple == nullptr) {
+    return UndoLog{true, {}, {}, ts, prev_version};
+  }
+
+  // case2: Delete
+  if (target_tuple == nullptr) {
+    return UndoLog{false, std::vector<bool>(schema->GetColumnCount(), true), *base_tuple, ts, prev_version};
+  }
+
+  // case3: Update
+  // if(IsTupleContentEqual(*base_tuple, *target_tuple)) {
+  //   return UndoLog{false, {}, {}, ts, prev_version};
+  // }
+  std::vector<bool> modified_fields(schema->GetColumnCount(), false);
+  std::vector<Value> modified_vals;
+  std::vector<Column> partial_cols;
+  for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+    Value origin = base_tuple->GetValue(schema, i);
+    Value target = target_tuple->GetValue(schema, i);
+    if (!origin.CompareExactlyEquals(target)) {
+      modified_fields[i] = true;
+      modified_vals.emplace_back(std::move(origin));
+      partial_cols.emplace_back(schema->GetColumn(i));
+    }
+  }
+  Schema partial_chema(partial_cols);
+  return UndoLog{false, std::move(modified_fields), Tuple(modified_vals, &partial_chema), ts, prev_version};
 }
 
 /**
@@ -224,7 +252,53 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
  */
 auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple,
                             const UndoLog &log) -> UndoLog {
-  UNIMPLEMENTED("not implemented");
+  if (log.is_deleted_) {
+    return log;
+  }
+
+  // case1: Insert
+  if (base_tuple == nullptr) {
+    return log;
+  }
+  // case2: Delete
+  if (target_tuple == nullptr) {
+    // 重建，获取原始版本
+    auto tuple_opt = ReconstructTuple(schema, *base_tuple, {0, false}, {log});
+    BUSTUB_ASSERT(tuple_opt.has_value(), "tuple should have value");
+    return UndoLog{false, std::vector<bool>(schema->GetColumnCount(), true), *tuple_opt, log.ts_, log.prev_version_};
+  }
+  // case3: Update
+  std::vector<Column> undo_partial_cols;
+  for (size_t i = 0; i < log.modified_fields_.size(); i++) {
+    if (log.modified_fields_[i]) {
+      undo_partial_cols.emplace_back(schema->GetColumn(i));
+    }
+  }
+  Schema undo_schema(undo_partial_cols);
+
+  size_t idx = 0;
+  std::vector<Value> modified_vals;
+  std::vector<Column> partial_cols;
+  std::vector<bool> modified_fields(schema->GetColumnCount(), false);
+
+  for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+    // 如果该列被修改了，从undo_log中获取原值
+    Value origin;
+    if (log.modified_fields_[i]) {
+      origin = log.tuple_.GetValue(&undo_schema, idx);
+      idx++;
+    } else {
+      origin = base_tuple->GetValue(schema, i);
+    }
+    Value target = target_tuple->GetValue(schema, i);
+    if (!origin.CompareExactlyEquals(target)) {
+      modified_fields[i] = true;
+      modified_vals.emplace_back(std::move(origin));
+      partial_cols.emplace_back(schema->GetColumn(i));
+    }
+  }
+  Schema partial_schema(partial_cols);
+  return UndoLog{false, std::move(modified_fields), Tuple(modified_vals, &partial_schema), log.ts_, log.prev_version_};
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
