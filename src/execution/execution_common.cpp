@@ -274,11 +274,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
     for (size_t i = 0; i < log.modified_fields_.size(); i++) {
       if (log.modified_fields_[i]) {
         auto value = log.tuple_.GetValue(&partial_schema, idx);
-        if (value.IsNull()) {
-          ss << "NULL";
-        } else {
-          ss << value.ToString();
-        }
+        ss << (value.IsNull() ? "NULL" : value.ToString());
         idx++;
       } else {
         ss << "_";
@@ -300,18 +296,19 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
                  meta.is_deleted_ ? "<del marker> " : "", tuple.ToString(schema));
 
     // 处理所有版本
-    std::optional<UndoLink> undo_link = txn_mgr->GetUndoLink(rid);
-    while (undo_link.has_value()) {
-      auto undo_log_opt = txn_mgr->GetUndoLogOptional(*undo_link);
-      if (undo_log_opt.has_value()) {
-        const UndoLog &undo_log = *undo_log_opt;
-        // todo: 已提交：查transaction表，获取txn id
-        // 未提交：就是去掉次高位
-        fmt::println(stderr, "\ttxn{}@{} {} ts={}", "?", "?", log_to_string(undo_log), std::to_string(undo_log.ts_));
-        undo_link = undo_log.prev_version_;
-      } else {
-        undo_link = std::nullopt;
+    for (auto undo_link = txn_mgr->GetUndoLink(rid); undo_link.has_value();) {
+      // 如果undo_log_opt有值则继续，否则终止循环
+      auto undo_log_opt = undo_link.has_value() ? txn_mgr->GetUndoLogOptional(*undo_link) : std::nullopt;
+      if (!undo_log_opt.has_value()) {
+        break;
       }
+
+      const UndoLog &undo_log = *undo_log_opt;
+      // todo: 已提交：查transaction表，获取txn id
+      // 未提交：就是去掉次高位
+      fmt::println(stderr, "\ttxn{}@{} {} ts={}", "?", "?", log_to_string(undo_log), to_readable_ts(undo_log.ts_));
+
+      undo_link = undo_log.prev_version_;
     }
   }
 }

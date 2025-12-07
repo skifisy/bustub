@@ -70,13 +70,31 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
     }
   }
 
-  // TODO(fall2023): Implement the commit logic!
-
-  std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
-
-  // TODO(fall2023): set commit timestamp + update last committed timestamp here.
   // 获取提交时间戳
   txn->commit_ts_ = ++last_commit_ts_;
+
+  // TODO(fall2023): Implement the commit logic!
+  // 将事务中待写回的数据写回
+  std::scoped_lock<std::mutex> txn_lock(txn->latch_);
+  for (auto &[oid, rid_set] : txn->write_set_) {
+    auto table_info = catalog_->GetTable(oid);
+    auto table_heap = table_info->table_.get();
+    for (auto rid : rid_set) {
+      auto [meta, tuple, first_undo_link] = GetTupleAndUndoLink(this, table_heap, rid);
+      BUSTUB_ASSERT(meta.ts_ == txn->GetTransactionTempTs(), "base tuple's ts should equal to txn's temp ts");
+      meta.ts_ = txn->GetCommitTs();
+      auto ret = UpdateTupleAndUndoLink(this, rid, first_undo_link, table_heap, txn, meta, tuple);
+      BUSTUB_ASSERT(ret, "update fail!");
+    }
+  }
+
+  // mvcc保证同时只有一个未提交的transaction能修改base_tuple （同时的修改会abort掉）
+  // 所以，不会生成一个未提交 && 修改数据的版本链
+  // for (auto &undo_log : txn->undo_logs_) {
+  //   undo_log.ts_ = txn->commit_ts_;
+  // }
+
+  std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
   txn->state_ = TransactionState::COMMITTED;
   running_txns_.UpdateCommitTs(txn->commit_ts_);
   running_txns_.RemoveTxn(txn->read_ts_);

@@ -61,6 +61,8 @@ class TransactionManager {
 
   /**
    * @brief Update an undo link that links table heap tuple to the first undo log.
+   * 将PageVersionInfo中，rid对应的undo_log link的首个link更新为prev_link，
+   * 如果传入的prev_link为空，则删除rid对应的link条目
    * Before updating, `check` function will be called to ensure validity.
    */
   auto UpdateUndoLink(RID rid, std::optional<UndoLink> prev_link,
