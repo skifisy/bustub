@@ -16,6 +16,8 @@ We make the autograder for each assignment available to non-CMU students on Grad
 
 **WARNING: IF YOU ARE A STUDENT OUTSIDE CMU, DO NOT MAKE YOUR SOLUTION PUBLICLY AVAILABLE, AND DO SUBMIT YOUR OWN WORK. OTHERWISE, YOU WILL BE BANNED FROM USING THE AUTOGRADER.** Thank you for creating a fair learning environment.
 
+**本分支存储到P3为止的版本，因为p4的内容会导致p3的测试无法通过！**
+
 ## Cloning this Repository
 
 The following instructions are adapted from the Github documentation on [duplicating a repository](https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/duplicating-a-repository). The procedure below walks you through creating a private BusTub repository that you can use for development.
