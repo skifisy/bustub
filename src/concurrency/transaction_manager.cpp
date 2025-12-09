@@ -114,6 +114,62 @@ void TransactionManager::Abort(Transaction *txn) {
   running_txns_.RemoveTxn(txn->read_ts_);
 }
 
-void TransactionManager::GarbageCollection() { UNIMPLEMENTED("not implemented"); }
+void TransactionManager::GarbageCollection() {
+  timestamp_t water_mark = running_txns_.GetWatermark();
+  std::unordered_map<table_oid_t, std::unordered_set<RID>> modified_rids;
+  // step1: 遍历write_set寻找修改过的table_id + rid
+  for (auto [txn_id, txn] : txn_map_) {
+    for (auto &[table_id, rid_set] : txn->write_set_) {
+      auto it = modified_rids.find(table_id);
+      if (it != modified_rids.end()) {
+        modified_rids[table_id].insert(rid_set.begin(), rid_set.end());
+      } else {
+        modified_rids[table_id] = rid_set;
+      }
+    }
+  }
+
+  // step2: 遍历每个table中对应的tuple，构建不可删除的事务集合
+  std::unordered_set<txn_id_t> reserve_set;
+  for (auto &[table_id, rids] : modified_rids) {
+    auto table = catalog_->GetTable(table_id);
+    for (auto rid : rids) {
+      auto [meta, tuple, link_opt] = GetTupleAndUndoLink(this, table->table_.get(), rid);
+      // 从meta 到 第一个 ts<=water_mark 日志都需要保留，后面的日志需要删除
+      if (meta.ts_ <= water_mark) {
+        continue;
+      }
+
+      UndoLink link = link_opt.has_value() ? *link_opt : UndoLink();
+      while (link.IsValid()) {
+        auto log = GetUndoLogOptional(link);
+        if (!log) {
+          break;
+        }
+        reserve_set.insert(link_opt->prev_txn_);  // 该log需要保留
+        if (log->ts_ <= water_mark) {
+          break;  // 后续的log都无需保留
+        }
+        link = log->prev_version_;
+      }
+    }
+  }
+
+  std::unique_lock<std::shared_mutex> lock(txn_map_mutex_);
+  // step3: 遍历所有transaction
+  for (auto it = txn_map_.begin(); it != txn_map_.end();) {
+    auto &[txn_id, txn] = *it;
+    // 未提交/处于write-write冲突的事务不能删除
+    if (txn->state_ == TransactionState::RUNNING || txn->state_ == TransactionState::TAINTED) {
+      ++it;
+      continue;
+    }
+    if (reserve_set.find(txn_id) == reserve_set.end()) {
+      it = txn_map_.erase(it);
+      continue;
+    }
+    ++it;
+  }
+}
 
 }  // namespace bustub
