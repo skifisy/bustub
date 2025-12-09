@@ -20,6 +20,7 @@
 #include "catalog/catalog.h"
 #include "catalog/column.h"
 #include "common/config.h"
+#include "common/exception.h"
 #include "common/macros.h"
 #include "common/rid.h"
 #include "concurrency/transaction.h"
@@ -411,6 +412,90 @@ auto GetTupleAtReadTs(RID rid, TableInfo *table_info, Transaction *txn, Transact
     }
   }
   return {false, {}};
+}
+
+auto GetPrimaryKeyIndex(Catalog *catalog, TableInfo *table_info) -> std::shared_ptr<IndexInfo> {
+  for (auto index : catalog->GetTableIndexes(table_info->name_)) {
+    if (index->is_primary_key_) {
+      return index;
+    }
+  }
+  return nullptr;
+}
+
+void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
+                 TransactionManager *txn_mgr) {
+  auto table_heap = table_info->table_.get();
+  auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
+
+  auto primary_index = GetPrimaryKeyIndex(catalog, table_info);
+  bool modified_primary_key = false;
+  Tuple base_key;
+  Tuple new_key;
+  Index *index;
+  // step1: 先检查主键，如果修改了主键，需要检查唯一性冲突
+  if (primary_index) {
+    index = primary_index->index_.get();
+    base_key = base_tuple.KeyFromTuple(table_info->schema_, primary_index->key_schema_, index->GetKeyAttrs());
+    new_key = new_tuple.KeyFromTuple(table_info->schema_, primary_index->key_schema_, index->GetKeyAttrs());
+    modified_primary_key = !IsTupleContentEqual(base_key, new_key);
+    std::vector<RID> primary_rids;
+    RID primary_key_rid;
+    if (modified_primary_key) {
+      // 不相等，需要检查new key是否发生了唯一性冲突
+      index->ScanKey(new_key, &primary_rids, txn);
+      if (!primary_rids.empty()) {
+        // 检查rid，可能已经删除了
+        primary_key_rid = primary_rids[0];
+        auto meta = table_heap->GetTupleMeta(primary_key_rid);
+        if (!meta.is_deleted_) {
+          // 如果并非删除，则发生了冲突
+          txn->SetTainted();
+          throw ExecutionException("primary key conflict");
+        }
+      }
+    }
+  }
+
+  // step2: 修改table_heap中的数据
+  // 1. 检查write-write冲突
+  if (IsWriteWriteConflict(txn, &base_meta)) {
+    txn->SetTainted();
+    throw ExecutionException("write-write conflict in delete_executor");
+  }
+  // 2. 自我修改，更新撤销日志
+  if (base_meta.ts_ == txn->GetTransactionTempTs()) {
+    if (link.has_value()) {
+      BUSTUB_ASSERT(link->prev_txn_ == txn->GetTransactionId(), "error");
+      auto undo_log = txn->GetUndoLog(link->prev_log_idx_);
+      auto new_log = GenerateUpdatedUndoLog(&table_info->schema_, &base_tuple, &new_tuple, undo_log);
+      txn->ModifyUndoLog(link->prev_log_idx_, new_log);
+    }
+    // 修改table_heap中的数据
+    table_heap->UpdateTupleInPlace({txn->GetTransactionTempTs(), false}, new_tuple, r);
+  } else {
+    // 3. 其他情况，生成撤销日志，并链接
+    UndoLink prev_link = link.has_value() ? *link : UndoLink();
+    UndoLog new_log = GenerateNewUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple,
+                                         &new_tuple, base_meta.ts_, prev_link);
+    txn->AppendUndoLog(new_log);
+    UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
+    // 更新tuple和link
+    UpdateTupleAndUndoLink(txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), false}, new_tuple);
+    txn->AppendWriteSet(table_info->oid_, r);
+  }
+
+  // step3: 如果修改了主键，那么更新index
+  if (modified_primary_key) {
+    // 原来的索引需要删除（因为现在tuple变了）
+    index->DeleteEntry(base_key, r, txn);
+    // 插入到新的索引
+    bool is_inserted = index->InsertEntry(new_key, r, txn);
+    if (!is_inserted) {
+      txn->SetTainted();
+      throw ExecutionException("insert index fail");
+    }
+  }
 }
 
 }  // namespace bustub

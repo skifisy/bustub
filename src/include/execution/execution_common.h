@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -74,6 +75,11 @@ auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool;
 
 auto GetTupleAtReadTs(RID rid, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr)
     -> std::tuple<bool, Tuple>;
+
+auto GetPrimaryKeyIndex(Catalog *catalog, TableInfo *table_info) -> std::shared_ptr<IndexInfo>;
+
+void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
+                 TransactionManager *txn_mgr);
 
 // TODO(P4): Add new functions as needed... You are likely need to define some more functions.
 //

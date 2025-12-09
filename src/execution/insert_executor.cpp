@@ -17,6 +17,7 @@
 #include "common/exception.h"
 #include "common/rid.h"
 #include "concurrency/transaction.h"
+#include "execution/execution_common.h"
 #include "execution/executors/insert_executor.h"
 #include "storage/table/tuple.h"
 #include "type/integer_type.h"
@@ -48,18 +49,24 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     while (child_executor_->Next(&tup, &r)) {
       // step1: 检查主键索引
       const auto &indexes = catalog->GetTableIndexes(table->name_);
-      for (auto &index : indexes) {
-        if (index->is_primary_key_) {
-          auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
-          auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
-          std::vector<RID> rids;
-          bplus_index->ScanKey(index_key, &rids, txn);
-          if (!rids.empty()) {
-            // 违反唯一约束，终止事务
-            // 检查table_heap中的tuple，可能已经删除了！
-            txn->SetTainted();
-            throw ExecutionException("the tuple is already exists in the primary key index");
+      auto index = GetPrimaryKeyIndex(catalog, table.get());
+      if (index) {
+        auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
+        auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
+        std::vector<RID> rids;
+        bplus_index->ScanKey(index_key, &rids, txn);
+        if (!rids.empty()) {
+          BUSTUB_ASSERT(rids.size() == 1, "error");
+          // 检查table_heap中的tuple，如果已经被删除了，那么切换到更新流程
+          auto [meta, tuple] = table_heap->GetTuple(rids[0]);
+          if (meta.is_deleted_) {
+            UpdateTuple(rids[0], tup, table.get(), catalog, txn, exec_ctx_->GetTransactionManager());
+            ++ret;
+            continue;
           }
+          // 违反唯一约束，终止事务
+          txn->SetTainted();
+          throw ExecutionException("the tuple is already exists in the primary key index");
         }
       }
 
