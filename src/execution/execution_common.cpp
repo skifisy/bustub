@@ -258,9 +258,12 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
   }
 
   // case1: Insert
-  if (base_tuple == nullptr) {
-    return log;
+  if (base_tuple == nullptr && target_tuple != nullptr) {
+    // 恢复到原始版本的tuple，然后generate一个undo_log
+    // 原始版本的tuple就是log里面的tuple（所有列都发生了改变）
+    return GenerateNewUndoLog(schema, &log.tuple_, target_tuple, log.ts_, log.prev_version_);
   }
+
   // case2: Delete
   if (target_tuple == nullptr) {
     // 重建，获取原始版本
@@ -423,41 +426,45 @@ auto GetPrimaryKeyIndex(Catalog *catalog, TableInfo *table_info) -> std::shared_
   return nullptr;
 }
 
+void DeleteTuple(RID r, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr) {
+  auto table_heap = table_info->table_.get();
+  auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
+  // 1. 检查write-write冲突
+  if (IsWriteWriteConflict(txn, &base_meta)) {
+    txn->SetTainted();
+    throw ExecutionException("write-write conflict in delete_executor");
+  }
+  // 2. 自我修改，更新撤销日志
+  if (base_meta.ts_ == txn->GetTransactionTempTs()) {
+    // 更新撤销日志
+    if (link.has_value()) {
+      BUSTUB_ASSERT(link->prev_txn_ == txn->GetTransactionId(), "error");
+      auto undo_log = txn->GetUndoLog(link->prev_log_idx_);
+      auto new_log = GenerateUpdatedUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple,
+                                            nullptr, undo_log);
+      txn->ModifyUndoLog(link->prev_log_idx_, new_log);
+    }
+    // 修改数据
+    table_heap->UpdateTupleMeta({txn->GetTransactionTempTs(), true}, r);
+  } else {
+    // 3. 其他情况，生成撤销日志，并链接
+    UndoLink prev_link = link.has_value() ? *link : UndoLink();
+    UndoLog new_log = GenerateNewUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple, nullptr,
+                                         base_meta.ts_, prev_link);
+    txn->AppendUndoLog(new_log);
+    UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
+    // 更新tuple_meta和undo_link
+    txn_mgr->UpdateUndoLink(r, new_link);
+    table_heap->UpdateTupleMeta({txn->GetTransactionTempTs(), true}, r);
+    txn->AppendWriteSet(table_info->oid_, r);
+  }
+}
+
 void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
                  TransactionManager *txn_mgr) {
   auto table_heap = table_info->table_.get();
   auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
 
-  auto primary_index = GetPrimaryKeyIndex(catalog, table_info);
-  bool modified_primary_key = false;
-  Tuple base_key;
-  Tuple new_key;
-  Index *index;
-  // step1: 先检查主键，如果修改了主键，需要检查唯一性冲突
-  if (primary_index) {
-    index = primary_index->index_.get();
-    base_key = base_tuple.KeyFromTuple(table_info->schema_, primary_index->key_schema_, index->GetKeyAttrs());
-    new_key = new_tuple.KeyFromTuple(table_info->schema_, primary_index->key_schema_, index->GetKeyAttrs());
-    modified_primary_key = !IsTupleContentEqual(base_key, new_key);
-    std::vector<RID> primary_rids;
-    RID primary_key_rid;
-    if (modified_primary_key) {
-      // 不相等，需要检查new key是否发生了唯一性冲突
-      index->ScanKey(new_key, &primary_rids, txn);
-      if (!primary_rids.empty()) {
-        // 检查rid，可能已经删除了
-        primary_key_rid = primary_rids[0];
-        auto meta = table_heap->GetTupleMeta(primary_key_rid);
-        if (!meta.is_deleted_) {
-          // 如果并非删除，则发生了冲突
-          txn->SetTainted();
-          throw ExecutionException("primary key conflict");
-        }
-      }
-    }
-  }
-
-  // step2: 修改table_heap中的数据
   // 1. 检查write-write冲突
   if (IsWriteWriteConflict(txn, &base_meta)) {
     txn->SetTainted();
@@ -468,7 +475,8 @@ void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalo
     if (link.has_value()) {
       BUSTUB_ASSERT(link->prev_txn_ == txn->GetTransactionId(), "error");
       auto undo_log = txn->GetUndoLog(link->prev_log_idx_);
-      auto new_log = GenerateUpdatedUndoLog(&table_info->schema_, &base_tuple, &new_tuple, undo_log);
+      auto new_log = GenerateUpdatedUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple,
+                                            &new_tuple, undo_log);
       txn->ModifyUndoLog(link->prev_log_idx_, new_log);
     }
     // 修改table_heap中的数据
@@ -484,16 +492,46 @@ void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalo
     UpdateTupleAndUndoLink(txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), false}, new_tuple);
     txn->AppendWriteSet(table_info->oid_, r);
   }
+}
 
-  // step3: 如果修改了主键，那么更新index
-  if (modified_primary_key) {
-    // 原来的索引需要删除（因为现在tuple变了）
-    index->DeleteEntry(base_key, r, txn);
-    // 插入到新的索引
-    bool is_inserted = index->InsertEntry(new_key, r, txn);
-    if (!is_inserted) {
-      txn->SetTainted();
-      throw ExecutionException("insert index fail");
+// new_tuple是否存在的标准：根据主键
+// 如果new_tuple已经存在，则直接更新table_heap上的tuple
+// 如果new_tuple还不存在，那么在table_heap上插入新的tuple
+void InsertOrUpdateTuple(Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
+                         TransactionManager *txn_mgr) {
+  // step1: 先检查主键，如果已经存在于索引中，直接原地更新tuple
+  auto table_heap = table_info->table_.get();
+  auto index = GetPrimaryKeyIndex(catalog, table_info);
+  Tuple index_key;
+  if (index) {
+    std::vector<RID> rids;
+    index_key = new_tuple.KeyFromTuple(table_info->schema_, index->key_schema_, index->index_->GetKeyAttrs());
+    index->index_->ScanKey(index_key, &rids, txn);
+    if (!rids.empty()) {
+      BUSTUB_ASSERT(rids.size() == 1, "error");
+      // 原地更新tuple（无需再插入主键了）
+      // 检查tuple是否已经被删除了
+      auto meta = table_heap->GetTupleMeta(rids[0]);
+      if (!meta.is_deleted_) {
+        txn->SetTainted();
+        throw ExecutionException("write-write conflict");
+      }
+      UpdateTuple(rids[0], new_tuple, table_info, catalog, txn, txn_mgr);
+      return;
+    }
+  }
+  // step2: 如果不存在于索引中，插入tuple
+  if (std::optional<RID> rid_inserted;
+      (rid_inserted = table_heap->InsertTuple({txn->GetTransactionId(), false}, new_tuple))) {
+    // 2.1 加入到事务的 write set
+    txn->AppendWriteSet(table_info->oid_, *rid_inserted);
+    // 2.2 插入索引
+    if (index) {
+      bool inserted = index->index_->InsertEntry(index_key, *rid_inserted, txn);
+      if (!inserted) {
+        txn->SetTainted();
+        throw ExecutionException("the tuple is already exists in the primary key index");
+      }
     }
   }
 }

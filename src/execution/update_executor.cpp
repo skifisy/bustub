@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "catalog/catalog.h"
 #include "concurrency/transaction.h"
@@ -48,16 +49,42 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Transaction *txn = exec_ctx_->GetTransaction();
   if (txn != nullptr) {
     TransactionManager *txn_mgr = exec_ctx_->GetTransactionManager();
+    auto primary_index = GetPrimaryKeyIndex(catalog, table.get());
+    // 1. 先删除所有的旧tuple
+    std::vector<std::tuple<RID, Tuple>> old_tuples;
     while (child_executor_->Next(&old_tup, &r)) {
-      // 获取新值
-      std::vector<Value> update_values;
-      for (auto &target_expr : plan_->target_expressions_) {
-        update_values.push_back(target_expr->Evaluate(&old_tup, schema));
+      if (!primary_index) {
+        // 没有主键索引：直接原地更新即可
+        // 获取新值
+        std::vector<Value> update_values;
+        for (auto &target_expr : plan_->target_expressions_) {
+          update_values.push_back(target_expr->Evaluate(&old_tup, schema));
+        }
+        Tuple new_tup(update_values, &schema);
+        UpdateTuple(r, new_tup, table.get(), catalog, txn, txn_mgr);
+        ++ret;
+      } else {
+        // 存在主键索引：先删除，后更新tuple
+        DeleteTuple(r, table.get(), txn, txn_mgr);
+        old_tuples.emplace_back(r, std::move(old_tup));
       }
-      Tuple new_tup(update_values, &schema);
-      UpdateTuple(r, new_tup, table.get(), catalog, txn, txn_mgr);
-      ret++;
     }
+
+    if (primary_index) {
+      // 2. 然后再插入新tuple
+      for (auto &[r, old_tup] : old_tuples) {
+        // 获取新值
+        std::vector<Value> update_values;
+        for (auto &target_expr : plan_->target_expressions_) {
+          update_values.push_back(target_expr->Evaluate(&old_tup, schema));
+        }
+        Tuple new_tup(update_values, &schema);
+        // 存在主键索引，插入/更新数据
+        InsertOrUpdateTuple(new_tup, table.get(), catalog, txn, txn_mgr);
+        ret++;
+      }
+    }
+
     Value v = ValueFactory::GetIntegerValue(ret);
     std::vector<Value> values{v};
     *tuple = Tuple{values, &GetOutputSchema()};

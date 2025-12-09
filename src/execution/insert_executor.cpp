@@ -47,49 +47,8 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   auto txn = exec_ctx_->GetTransaction();
   if (txn != nullptr) {
     while (child_executor_->Next(&tup, &r)) {
-      // step1: 检查主键索引
-      const auto &indexes = catalog->GetTableIndexes(table->name_);
-      auto index = GetPrimaryKeyIndex(catalog, table.get());
-      if (index) {
-        auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
-        auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
-        std::vector<RID> rids;
-        bplus_index->ScanKey(index_key, &rids, txn);
-        if (!rids.empty()) {
-          BUSTUB_ASSERT(rids.size() == 1, "error");
-          // 检查table_heap中的tuple，如果已经被删除了，那么切换到更新流程
-          auto [meta, tuple] = table_heap->GetTuple(rids[0]);
-          if (meta.is_deleted_) {
-            UpdateTuple(rids[0], tup, table.get(), catalog, txn, exec_ctx_->GetTransactionManager());
-            ++ret;
-            continue;
-          }
-          // 违反唯一约束，终止事务
-          txn->SetTainted();
-          throw ExecutionException("the tuple is already exists in the primary key index");
-        }
-      }
-
-      // step2: 向table_heap中插入数据
-      // 1. 设置事务临时时间戳
-      meta.ts_ = txn->GetTransactionTempTs();
-      // 2. 插入数据
-      if ((rid_inserted = table_heap->InsertTuple(meta, tup))) {
-        ret++;
-        // 2.1 加入到事务的 write set
-        txn->AppendWriteSet(tid, *rid_inserted);
-        // 2.2 插入索引
-        // step3: 实际插入到索引中
-        for (auto &index : indexes) {
-          auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
-          auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
-          bool inserted = bplus_index->InsertEntry(index_key, *rid_inserted, exec_ctx_->GetTransaction());
-          if (!inserted) {
-            txn->SetTainted();
-            throw ExecutionException("the tuple is already exists in the primary key index");
-          }
-        }
-      }
+      InsertOrUpdateTuple(tup, table.get(), catalog, txn, exec_ctx_->GetTransactionManager());
+      ++ret;
     }
     std::vector<Value> values{};
     values.emplace_back(TypeId::INTEGER, ret);

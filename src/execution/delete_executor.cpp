@@ -46,35 +46,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if (txn != nullptr) {
     auto txn_mgr = exec_ctx_->GetTransactionManager();
     while (child_executor_->Next(&tup, &r)) {
-      auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
-      // 1. 检查write-write冲突
-      if (IsWriteWriteConflict(txn, &base_meta)) {
-        txn->SetTainted();
-        throw ExecutionException("write-write conflict in delete_executor");
-      }
-      // 2. 自我修改，更新撤销日志
-      if (base_meta.ts_ == txn->GetTransactionTempTs()) {
-        // 更新撤销日志
-        if (link.has_value()) {
-          BUSTUB_ASSERT(link->prev_txn_ == txn->GetTransactionId(), "error");
-          auto undo_log = txn->GetUndoLog(link->prev_log_idx_);
-          auto new_log = GenerateUpdatedUndoLog(&table->schema_, &base_tuple, nullptr, undo_log);
-          txn->ModifyUndoLog(link->prev_log_idx_, new_log);
-        }
-        // 修改数据
-        table_heap->UpdateTupleMeta({txn->GetTransactionTempTs(), true}, r);
-      } else {
-        // 3. 其他情况，生成撤销日志，并链接
-        UndoLink prev_link = link.has_value() ? *link : UndoLink();
-        UndoLog new_log = GenerateNewUndoLog(&table->schema_, &base_tuple, nullptr, base_meta.ts_, prev_link);
-        txn->AppendUndoLog(new_log);
-        UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
-        // 更新tuple_meta和undo_link
-        txn_mgr->UpdateUndoLink(r, new_link);
-        table_heap->UpdateTupleMeta({txn->GetTransactionTempTs(), true}, r);
-        txn->AppendWriteSet(table->oid_, r);
-      }
-
+      DeleteTuple(r, table.get(), txn, txn_mgr);
       ret++;
     }
     Value v = ValueFactory::GetIntegerValue(ret);

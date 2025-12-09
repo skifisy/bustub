@@ -78,8 +78,13 @@ auto GetTupleAtReadTs(RID rid, TableInfo *table_info, Transaction *txn, Transact
 
 auto GetPrimaryKeyIndex(Catalog *catalog, TableInfo *table_info) -> std::shared_ptr<IndexInfo>;
 
+void DeleteTuple(RID r, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr);
+
 void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
                  TransactionManager *txn_mgr);
+
+void InsertOrUpdateTuple(Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
+                         TransactionManager *txn_mgr);
 
 // TODO(P4): Add new functions as needed... You are likely need to define some more functions.
 //
