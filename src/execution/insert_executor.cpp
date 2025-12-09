@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <memory>
 
+#include "common/bustub_instance.h"
+#include "common/exception.h"
 #include "common/rid.h"
 #include "concurrency/transaction.h"
 #include "execution/executors/insert_executor.h"
@@ -44,6 +46,23 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   auto txn = exec_ctx_->GetTransaction();
   if (txn != nullptr) {
     while (child_executor_->Next(&tup, &r)) {
+      // step1: 检查主键索引
+      const auto &indexes = catalog->GetTableIndexes(table->name_);
+      for (auto &index : indexes) {
+        if (index->is_primary_key_) {
+          auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
+          auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
+          std::vector<RID> rids;
+          bplus_index->ScanKey(index_key, &rids, txn);
+          if (!rids.empty()) {
+            // 违反唯一约束，终止事务
+            txn->SetTainted();
+            throw ExecutionException("the tuple is already exists in the primary key index");
+          }
+        }
+      }
+
+      // step2: 向table_heap中插入数据
       // 1. 设置事务临时时间戳
       meta.ts_ = txn->GetTransactionTempTs();
       // 2. 插入数据
@@ -52,11 +71,15 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
         // 2.1 加入到事务的 write set
         txn->AppendWriteSet(tid, *rid_inserted);
         // 2.2 插入索引
-        const auto &indexes = catalog->GetTableIndexes(table->name_);
+        // step3: 实际插入到索引中
         for (auto &index : indexes) {
           auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
           auto index_key = tup.KeyFromTuple(table->schema_, index->key_schema_, index->index_->GetKeyAttrs());
-          bplus_index->InsertEntry(index_key, *rid_inserted, exec_ctx_->GetTransaction());
+          bool inserted = bplus_index->InsertEntry(index_key, *rid_inserted, exec_ctx_->GetTransaction());
+          if (!inserted) {
+            txn->SetTainted();
+            throw ExecutionException("the tuple is already exists in the primary key index");
+          }
         }
       }
     }
