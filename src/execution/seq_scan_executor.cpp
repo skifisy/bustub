@@ -46,13 +46,9 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     ++(*iter_);
     // mvcc
     if (txn != nullptr) {
-      auto undo_logs_opt = CollectUndoLogs(*rid, tup_meta, tup, txn_mgr->GetUndoLink(*rid), txn, txn_mgr);
-      if (undo_logs_opt.has_value()) {
-        auto tup_opt = ReconstructTuple(&table_info_->schema_, tup, tup_meta, *undo_logs_opt);
-        if (!tup_opt.has_value()) {
-          continue;
-        }
-        tup = *tup_opt;
+      auto [is_exits, tup_opt] = GetTupleAtReadTs(*rid, table_info_.get(), txn, txn_mgr);
+      if (is_exits) {
+        tup = std::move(tup_opt);
       } else {
         continue;
       }

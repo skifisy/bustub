@@ -82,17 +82,6 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         UpdateTupleAndUndoLink(txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), false}, new_tup);
         txn->AppendWriteSet(table->oid_, r);
       }
-
-      // // 更新索引
-      // const auto &indexes = catalog->GetTableIndexes(table->name_);
-      // for (auto &index : indexes) {
-      //   auto bplus_index = dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index->index_.get());
-      //   auto index_key = old_tup.KeyFromTuple(schema, index->key_schema_, index->index_->GetKeyAttrs());
-      //   bplus_index->DeleteEntry(index_key, r, exec_ctx_->GetTransaction());
-
-      //   auto new_index_key = new_tup.KeyFromTuple(schema, index->key_schema_, index->index_->GetKeyAttrs());
-      //   bplus_index->InsertEntry(new_index_key, *rid_inserted, exec_ctx_->GetTransaction());
-      // }
       ret++;
     }
     Value v = ValueFactory::GetIntegerValue(ret);

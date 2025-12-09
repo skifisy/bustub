@@ -399,4 +399,18 @@ auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool {
   return false;
 }
 
+auto GetTupleAtReadTs(RID rid, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr)
+    -> std::tuple<bool, Tuple> {
+  auto [base_meta, base_tuple, undo_link_opt] = GetTupleAndUndoLink(txn_mgr, table_info->table_.get(), rid);
+  auto undo_logs_opt = CollectUndoLogs(rid, base_meta, base_tuple, undo_link_opt, txn, txn_mgr);
+  if (undo_logs_opt) {
+    // 重建日志
+    auto tuple_opt = ReconstructTuple(&table_info->schema_, base_tuple, base_meta, *undo_logs_opt);
+    if (tuple_opt.has_value()) {
+      return {true, std::move(*tuple_opt)};
+    }
+  }
+  return {false, {}};
+}
+
 }  // namespace bustub

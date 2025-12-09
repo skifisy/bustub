@@ -56,6 +56,7 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
           bplus_index->ScanKey(index_key, &rids, txn);
           if (!rids.empty()) {
             // 违反唯一约束，终止事务
+            // 检查table_heap中的tuple，可能已经删除了！
             txn->SetTainted();
             throw ExecutionException("the tuple is already exists in the primary key index");
           }

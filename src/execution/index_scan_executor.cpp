@@ -10,10 +10,14 @@
 //
 //===----------------------------------------------------------------------===//
 #include "execution/executors/index_scan_executor.h"
+#include <cstddef>
 #include <memory>
 #include <vector>
 #include "catalog/catalog.h"
+#include "concurrency/transaction_manager.h"
+#include "execution/execution_common.h"
 #include "storage/index/b_plus_tree_index.h"
+#include "storage/table/tuple.h"
 
 namespace bustub {
 IndexScanExecutor::IndexScanExecutor(ExecutorContext *exec_ctx, const IndexScanPlanNode *plan)
@@ -58,12 +62,24 @@ auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       if (!result.empty()) {
         BUSTUB_ASSERT(result.size() == 1, "Point query should return only one result");
         *rid = result[0];
-        // 读取数据表中的tuple
+        // 处理事务逻辑
+        auto txn = exec_ctx_->GetTransaction();
         auto table_info = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_);
-        auto [found, tup] = table_info->table_->GetTuple(*rid);
-        if (!found.is_deleted_) {
-          *tuple = std::move(tup);
-          return true;
+        if (txn != nullptr) {
+          auto txn_mgr = exec_ctx_->GetTransactionManager();
+          auto [is_exist, tup] = GetTupleAtReadTs(*rid, table_info.get(), txn, txn_mgr);
+          if (is_exist) {
+            *tuple = std::move(tup);
+            return true;
+          }
+
+        } else {
+          // 读取数据表中的tuple
+          auto [found, tup] = table_info->table_->GetTuple(*rid);
+          if (!found.is_deleted_) {
+            *tuple = std::move(tup);
+            return true;
+          }
         }
       }
     }
@@ -74,12 +90,21 @@ auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       ++(*index_iter_);
       *rid = rid_value;
       auto table_info = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_);
-      auto [found, tup] = table_info->table_->GetTuple(*rid);
-      if (found.is_deleted_) {
-        continue;
+      auto txn = exec_ctx_->GetTransaction();
+      if (txn != nullptr) {
+        auto [is_exist, tup] = GetTupleAtReadTs(*rid, table_info.get(), txn, exec_ctx_->GetTransactionManager());
+        if (is_exist) {
+          *tuple = std::move(tup);
+          return true;
+        }
+      } else {
+        auto [found, tup] = table_info->table_->GetTuple(*rid);
+        if (found.is_deleted_) {
+          continue;
+        }
+        *tuple = std::move(tup);
+        return true;
       }
-      *tuple = std::move(tup);
-      return true;
     }
   }
 
