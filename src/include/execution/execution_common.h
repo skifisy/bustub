@@ -71,7 +71,7 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
                TableHeap *table_heap);
 
-auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool;
+auto IsWriteWriteConflict(Transaction *txn, const TupleMeta *base_meta) -> bool;
 
 auto GetTupleAtReadTs(RID rid, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr)
     -> std::tuple<bool, Tuple>;
@@ -80,8 +80,9 @@ auto GetPrimaryKeyIndex(Catalog *catalog, TableInfo *table_info) -> std::shared_
 
 void DeleteTuple(RID r, TableInfo *table_info, Transaction *txn, TransactionManager *txn_mgr);
 
-void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
-                 TransactionManager *txn_mgr);
+void UpdateTuple(
+    RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn, TransactionManager *txn_mgr,
+    std::function<bool(const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>)> &&check = nullptr);
 
 void InsertOrUpdateTuple(Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
                          TransactionManager *txn_mgr);

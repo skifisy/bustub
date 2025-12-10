@@ -391,7 +391,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   }
 }
 
-auto IsWriteWriteConflict(Transaction *txn, TupleMeta *base_meta) -> bool {
+auto IsWriteWriteConflict(Transaction *txn, const TupleMeta *base_meta) -> bool {
   // case1: 一个事务修改另外一个尚未提交事务的数据
   if ((base_meta->ts_ & TXN_START_ID) != 0 && base_meta->ts_ != txn->GetTransactionTempTs()) {
     return true;
@@ -452,16 +452,24 @@ void DeleteTuple(RID r, TableInfo *table_info, Transaction *txn, TransactionMana
     UndoLog new_log = GenerateNewUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple, nullptr,
                                          base_meta.ts_, prev_link);
     txn->AppendUndoLog(new_log);
+    txn->AppendWriteSet(table_info->oid_, r);
     UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
     // 更新tuple_meta和undo_link
-    txn_mgr->UpdateUndoLink(r, new_link);
-    table_heap->UpdateTupleMeta({txn->GetTransactionTempTs(), true}, r);
-    txn->AppendWriteSet(table_info->oid_, r);
+    bool success = UpdateTupleAndUndoLink(
+        txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), true}, {},
+        [txn](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>) {
+          return !IsWriteWriteConflict(txn, &meta);
+        });
+    if (!success) {
+      txn->SetTainted();
+      throw ExecutionException("write-write conflict at running time!");
+    }
   }
 }
 
-void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn,
-                 TransactionManager *txn_mgr) {
+void UpdateTuple(
+    RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalog, Transaction *txn, TransactionManager *txn_mgr,
+    std::function<bool(const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>)> &&check) {
   auto table_heap = table_info->table_.get();
   auto [base_meta, base_tuple, link] = GetTupleAndUndoLink(txn_mgr, table_heap, r);
 
@@ -487,10 +495,22 @@ void UpdateTuple(RID r, Tuple &new_tuple, TableInfo *table_info, Catalog *catalo
     UndoLog new_log = GenerateNewUndoLog(&table_info->schema_, base_meta.is_deleted_ ? nullptr : &base_tuple,
                                          &new_tuple, base_meta.ts_, prev_link);
     txn->AppendUndoLog(new_log);
+    txn->AppendWriteSet(table_info->oid_, r);
     UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
     // 更新tuple和link
-    UpdateTupleAndUndoLink(txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), false}, new_tuple);
-    txn->AppendWriteSet(table_info->oid_, r);
+    bool success = UpdateTupleAndUndoLink(
+        txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), false}, new_tuple,
+        [txn, &check](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink> link) {
+          // 检查：write-write conflict
+          if (check != nullptr && !check(meta, tuple, rid, link)) {
+            return false;
+          }
+          return !IsWriteWriteConflict(txn, &meta);
+        });
+    if (!success) {
+      txn->SetTainted();
+      throw ExecutionException("write-write conflict at running time");
+    }
   }
 }
 
@@ -516,7 +536,13 @@ void InsertOrUpdateTuple(Tuple &new_tuple, TableInfo *table_info, Catalog *catal
         txn->SetTainted();
         throw ExecutionException("write-write conflict");
       }
-      UpdateTuple(rids[0], new_tuple, table_info, catalog, txn, txn_mgr);
+      // 插入的场景，所以要保证tuple已经删除了才能插入
+      // 两种情况：1. 自己进行的删除（还没有提交）；
+      //  2.
+      //  其他事务（已经提交）进行的删除（这种情况可能发生冲突，因为可能这个时候其他事务可能插入了数据，提交了，此时meta不是delete状态了）
+      UpdateTuple(
+          rids[0], new_tuple, table_info, catalog, txn, txn_mgr,
+          [](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>) { return meta.is_deleted_; });
       return;
     }
   }

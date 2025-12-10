@@ -101,6 +101,12 @@ void Transaction::SetTainted() {
   std::terminate();
 }
 
+auto TransactionManager::GetTransaction(txn_id_t tid) -> std::shared_ptr<Transaction> {
+  std::shared_lock<std::shared_mutex> lock(txn_map_mutex_);
+  auto it = txn_map_.find(tid);
+  return it == txn_map_.end() ? nullptr : it->second;
+}
+
 auto UpdateTupleAndUndoLink(
     TransactionManager *txn_mgr, RID rid, std::optional<UndoLink> undo_link, TableHeap *table_heap, Transaction *txn,
     const TupleMeta &meta, const Tuple &tuple,
@@ -113,9 +119,15 @@ auto UpdateTupleAndUndoLink(
     return false;
   }
 
-  // Update tuple and tupleMeta if pass in tuple and meta are different
-  if (meta != base_meta || !IsTupleContentEqual(tuple, base_tuple)) {
-    table_heap->UpdateTupleInPlaceWithLockAcquired(meta, tuple, rid, page);
+  if (meta.is_deleted_) {
+    if (meta != base_meta) {
+      page->UpdateTupleMeta(meta, rid);
+    }
+  } else {
+    // Update tuple and tupleMeta if pass in tuple and meta are different
+    if (meta != base_meta || !IsTupleContentEqual(tuple, base_tuple)) {
+      table_heap->UpdateTupleInPlaceWithLockAcquired(meta, tuple, rid, page);
+    }
   }
 
   txn_mgr->UpdateUndoLink(rid, undo_link);

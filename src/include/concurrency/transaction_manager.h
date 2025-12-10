@@ -87,6 +87,8 @@ class TransactionManager {
    * heap. */
   void GarbageCollection();
 
+  auto GetTransaction(txn_id_t tid) -> std::shared_ptr<Transaction>;
+
   /** protects txn map */
   std::shared_mutex txn_map_mutex_;
   /** All transactions, running or committed */
