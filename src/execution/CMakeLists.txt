@@ -26,6 +26,7 @@ add_library(
         update_executor.cpp
         values_executor.cpp
         window_function_executor.cpp
+        vector_index_scan_executor.cpp
 )
 
 set(ALL_OBJECT_FILES
