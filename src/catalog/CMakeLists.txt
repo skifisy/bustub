@@ -3,7 +3,8 @@ add_library(
   OBJECT
   column.cpp
   table_generator.cpp
-  schema.cpp)
+  schema.cpp
+  catalog.cpp)
 
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:bustub_catalog>
