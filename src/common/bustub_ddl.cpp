@@ -90,8 +90,14 @@ void BusTubInstance::HandleIndexStatement(Transaction *txn, const IndexStatement
   for (const auto &col : stmt.cols_) {
     auto idx = stmt.table_->schema_.GetColIdx(col->col_name_.back());
     col_ids.push_back(idx);
-    if (stmt.table_->schema_.GetColumn(idx).GetType() != TypeId::INTEGER) {
-      throw NotImplementedException("only support creating index on integer column");
+    if (stmt.index_type_ != "hnsw" && stmt.index_type_ != "ivfflat") {
+      if (stmt.table_->schema_.GetColumn(idx).GetType() != TypeId::INTEGER) {
+        throw NotImplementedException("only support creating index on integer column");
+      }
+    } else {
+      if (stmt.table_->schema_.GetColumn(idx).GetType() != TypeId::VECTOR) {
+        throw NotImplementedException("only support creating vector index on vector column");
+      }
     }
   }
   auto key_schema = Schema::CopySchema(&stmt.table_->schema_, col_ids);
@@ -128,6 +134,12 @@ void BusTubInstance::HandleIndexStatement(Transaction *txn, const IndexStatement
     info = catalog_->CreateIndex<IntegerKeyType, IntegerValueType, IntegerComparatorType>(
         txn, stmt.index_name_, stmt.table_->table_, stmt.table_->schema_, key_schema, col_ids, TWO_INTEGER_SIZE,
         IntegerHashFunctionType{}, false, IndexType::STLUnorderedIndex);
+  } else if (stmt.index_type_ == "hnsw") {
+    info = catalog_->CreateVectorIndex(txn, stmt.index_name_, stmt.table_->table_, stmt.table_->schema_, key_schema,
+                                       col_ids, stmt.col_options_[0], stmt.options_, IndexType::VectorHNSWIndex);
+  } else if (stmt.index_type_ == "ivfflat") {
+    info = catalog_->CreateVectorIndex(txn, stmt.index_name_, stmt.table_->table_, stmt.table_->schema_, key_schema,
+                                       col_ids, stmt.col_options_[0], stmt.options_, IndexType::VectorIVFFlatIndex);
   } else {
     UNIMPLEMENTED("unsupported index type " + stmt.index_type_);
   }

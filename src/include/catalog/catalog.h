@@ -24,9 +24,12 @@
 #include "container/hash/hash_function.h"
 #include "storage/index/b_plus_tree_index.h"
 #include "storage/index/extendible_hash_table_index.h"
+#include "storage/index/hnsw_index.h"
 #include "storage/index/index.h"
+#include "storage/index/ivfflat_index.h"
 #include "storage/index/stl_ordered.h"
 #include "storage/index/stl_unordered.h"
+#include "storage/index/vector_index.h"
 #include "storage/table/table_heap.h"
 #include "storage/table/tuple.h"
 
@@ -39,7 +42,14 @@ using table_oid_t = uint32_t;
 using column_oid_t = uint32_t;
 using index_oid_t = uint32_t;
 
-enum class IndexType { BPlusTreeIndex, HashTableIndex, STLOrderedIndex, STLUnorderedIndex };
+enum class IndexType {
+  BPlusTreeIndex,
+  HashTableIndex,
+  STLOrderedIndex,
+  STLUnorderedIndex,
+  VectorIVFFlatIndex,
+  VectorHNSWIndex
+};
 
 /**
  * The TableInfo class maintains metadata about a table.
@@ -319,6 +329,76 @@ class Catalog {
     return GetIndex(index_name, table_meta->second->name_);
   }
 
+  auto CreateVectorIndex(Transaction *txn, const std::string &index_name, const std::string &table_name,
+                         const Schema &schema, const Schema &key_schema, const std::vector<uint32_t> &key_attrs,
+                         const std::string &distance_fn, const std::vector<std::pair<std::string, int>> &options,
+                         IndexType index_type) -> std::shared_ptr<IndexInfo> {
+    // Reject the creation request for nonexistent table
+    if (table_names_.find(table_name) == table_names_.end()) {
+      return NULL_INDEX_INFO;
+    }
+
+    // If the table exists, an entry for the table should already be present in index_names_
+    BUSTUB_ASSERT((index_names_.find(table_name) != index_names_.end()), "Broken Invariant");
+
+    // Determine if the requested index already exists for this table
+    auto &table_indexes = index_names_.find(table_name)->second;
+    if (table_indexes.find(index_name) != table_indexes.end()) {
+      // The requested index already exists for this table
+      return NULL_INDEX_INFO;
+    }
+
+    // Construct index metdata
+    auto meta = std::make_unique<IndexMetadata>(index_name, table_name, &schema, key_attrs, false);
+
+    // Construct the index, take ownership of metadata
+    // TODO(Kyle): We should update the API for CreateIndex
+    // to allow specification of the index type itself, not
+    // just the key, value, and comparator types
+
+    // TODO(chi): support both hash index and btree index
+    std::unique_ptr<VectorIndex> index;
+    VectorExpressionType vty;
+    if (distance_fn == "vector_ip_ops") {
+      vty = VectorExpressionType::InnerProduct;
+    } else if (distance_fn == "vector_l2_ops") {
+      vty = VectorExpressionType::L2Dist;
+    } else if (distance_fn == "vector_cosine_ops") {
+      vty = VectorExpressionType::CosineSimilarity;
+    } else {
+      UNIMPLEMENTED("unsupported distance function");
+    }
+    if (index_type == IndexType::VectorHNSWIndex) {
+      index = std::make_unique<HNSWIndex>(std::move(meta), bpm_, vty, options);
+    } else if (index_type == IndexType::VectorIVFFlatIndex) {
+      index = std::make_unique<IVFFlatIndex>(std::move(meta), bpm_, vty, options);
+    } else {
+      UNIMPLEMENTED("Unsupported Index Type");
+    }
+
+    // Populate the index with all tuples in table heap
+    auto table_meta = GetTable(table_name);
+    std::vector<std::pair<std::vector<double>, RID>> data;
+    for (auto iter = table_meta->table_->MakeIterator(); !iter.IsEnd(); ++iter) {
+      auto [meta, tuple] = iter.GetTuple();
+      auto value = tuple.GetValue(&table_meta->schema_, key_attrs[0]);
+      data.emplace_back(value.GetVector(), iter.GetRID());
+    }
+    index->BuildIndex(data);
+
+    // Get the next OID for the new index
+    const auto index_oid = next_index_oid_.fetch_add(1);
+
+    // Construct index information; IndexInfo takes ownership of the Index itself
+    auto index_info = std::make_shared<IndexInfo>(key_schema, index_name, std::move(index), index_oid, table_name, 0,
+                                                  false, index_type);
+
+    // Update internal tracking
+    indexes_.emplace(index_oid, index_info);
+    table_indexes.emplace(index_name, index_oid);
+
+    return index_info;
+  }
   /**
    * Get the index identifier by index OID.
    * @param index_oid The OID of the index for which to query
@@ -410,6 +490,12 @@ struct fmt::formatter<bustub::IndexType> : formatter<string_view> {
         break;
       case bustub::IndexType::STLUnorderedIndex:
         name = "STLUnordered";
+        break;
+      case bustub::IndexType::VectorHNSWIndex:
+        name = "VectorHNSW";
+        break;
+      case bustub::IndexType::VectorIVFFlatIndex:
+        name = "VectorIVFFlat";
         break;
       default:
         name = "Unknown";
