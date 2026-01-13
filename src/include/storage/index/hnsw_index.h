@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstddef>
+#include <limits>
+#include <optional>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -28,8 +31,27 @@ struct NSW {
   // points, sorted by distance
   auto SearchLayer(const std::vector<double> &base_vector, size_t limit, const std::vector<size_t> &entry_points)
       -> std::vector<size_t>;
-  // insert a key into the layer, only used when implementing NSW-only index
-  auto Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m);
+  /**
+   * @brief insert a key into the layer, only used when implementing NSW-only index
+   * @param ef_construction 候选点数量
+   * @param m 建边数量
+   * @param vertex_id 插入的向量id（hnsw索引下）
+   * @param vec 插入的向量本身
+   * @return 下一层的entry_point
+   */
+  auto Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m,
+              std::optional<size_t> entry_point) -> std::optional<size_t>;
+
+  /**
+   * @brief 启发式算法搜索候选邻居
+   * @param canditate 候选邻居集合 efConstruct个
+   * @param m 需要返回的邻居数量
+   * @param extend 是否扩展候选集（数据极度聚集时可用）
+   * @param keepPruned 是否保留一部分被丢弃的节点
+   */
+  auto SelectNeighborsHeuristic(const std::vector<double> &vec, const std::vector<size_t> &canditate, size_t m,
+                                bool extend = false, bool keepPruned = true) -> std::vector<size_t>;
+
   // add a vertex to this layer
   auto AddVertex(size_t vertex_id);
   // connect two vertices
@@ -37,11 +59,6 @@ struct NSW {
   // the default entry point for a layer is the first element inserted
   auto DefaultEntryPoint() -> size_t { return in_vertices_[0]; }
 };
-
-// select m nearest elements from the base vector in vertex_ids
-auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &vertex_ids,
-                     const std::vector<std::vector<double>> &vertices, size_t m, VectorExpressionType dist_fn)
-    -> std::vector<size_t>;
 
 class HNSWIndex : public VectorIndex {
  public:
@@ -55,7 +72,10 @@ class HNSWIndex : public VectorIndex {
   void InsertVectorEntry(const std::vector<double> &key, RID rid) override;
 
   auto AddVertex(const std::vector<double> &vec, RID rid) -> size_t;
+  void VisualizeGraph() const;
 
+ private:
+  auto GenerateRandomLevel() -> size_t;
   using Vector = std::vector<double>;
   std::unique_ptr<std::vector<Vector>> vertices_;
   std::vector<RID> rids_;
@@ -76,5 +96,37 @@ class HNSWIndex : public VectorIndex {
   // level normalization factor
   double m_l_;
 };
+
+namespace hnsw {
+// 大顶堆
+class VectorComparatorLess {
+ public:
+  explicit VectorComparatorLess(const NSW &nsw, const std::vector<double> &base) : nsw_(nsw), base_vector_(base) {}
+  auto operator()(size_t left_idx, size_t right_idx) -> bool {
+    double d1 = ComputeDistance(nsw_.vertices_[left_idx], base_vector_, nsw_.dist_fn_);
+    double d2 = ComputeDistance(nsw_.vertices_[right_idx], base_vector_, nsw_.dist_fn_);
+    return d1 < d2;
+  }
+
+ private:
+  const NSW &nsw_;
+  const std::vector<double> &base_vector_;
+};
+
+// 小顶堆
+class VectorComparatorGreater {
+ public:
+  explicit VectorComparatorGreater(const NSW &nsw, const std::vector<double> &base) : nsw_(nsw), base_vector_(base) {}
+  auto operator()(size_t left_idx, size_t right_idx) -> bool {
+    double d1 = ComputeDistance(nsw_.vertices_[left_idx], base_vector_, nsw_.dist_fn_);
+    double d2 = ComputeDistance(nsw_.vertices_[right_idx], base_vector_, nsw_.dist_fn_);
+    return d1 > d2;
+  }
+
+ private:
+  const NSW &nsw_;
+  const std::vector<double> &base_vector_;
+};
+}  // namespace hnsw
 
 }  // namespace bustub
