@@ -178,7 +178,7 @@ void BusTubInstance::HandleExplainStatement(Transaction *txn, const ExplainState
   }
 
   // Print optimizer result.
-  bustub::Optimizer optimizer(*catalog_, IsForceStarterRule());
+  bustub::Optimizer optimizer(*catalog_, session_variables_);
   auto optimized_plan = optimizer.Optimize(planner.plan_);
 
   l.unlock();

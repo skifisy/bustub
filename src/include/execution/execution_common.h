@@ -51,6 +51,17 @@ class TupleComparator {
  */
 auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, const Schema &schema) -> SortKey;
 
+class SortComparator {
+ public:
+  SortComparator(const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys, const Schema &schema)
+      : order_bys_(order_bys), schema_(schema) {}
+  auto operator()(const std::pair<Tuple, RID> &left, const std::pair<Tuple, RID> &right) -> bool;
+
+ private:
+  const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys_;
+  const Schema &schema_;
+};
+
 /**
  * Above are all you need for P3.
  * You can ignore the remaining part of this file until P4.

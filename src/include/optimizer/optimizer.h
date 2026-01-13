@@ -20,8 +20,7 @@ namespace bustub {
  */
 class Optimizer {
  public:
-  explicit Optimizer(const Catalog &catalog, bool force_starter_rule)
-      : catalog_(catalog), force_starter_rule_(force_starter_rule) {}
+  explicit Optimizer(const Catalog &catalog, const std::unordered_map<std::string, std::string> &session_variables);
 
   auto Optimize(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
@@ -111,6 +110,8 @@ class Optimizer {
    */
   auto OptimizeSortLimitAsTopN(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
+  auto OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
   /**
    * @brief get the estimated cardinality for a table based on the table name. Useful when join reordering. BusTub
    * doesn't support statistics for now, so it's the only way for you to get the table size :(
@@ -125,7 +126,9 @@ class Optimizer {
    */
   const Catalog &catalog_;
 
-  const bool force_starter_rule_;
+  bool force_starter_rule_;
+
+  std::string vector_index_match_method_;
 };
 
 }  // namespace bustub

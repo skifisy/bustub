@@ -50,7 +50,8 @@ enum class PlanType {
   TopNPerGroup,
   MockScan,
   InitCheck,
-  Window
+  Window,
+  VectorIndexScan
 };
 
 class AbstractPlanNode;

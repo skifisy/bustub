@@ -4,6 +4,23 @@
 #include "execution/plans/abstract_plan.h"
 
 namespace bustub {
+auto GetSessionVariable(const std::unordered_map<std::string, std::string> &session_variables, const std::string &key)
+    -> std::string {
+  if (auto iter = session_variables.find(key); iter != session_variables.end()) {
+    return iter->second;
+  }
+  return "";
+}
+
+auto IsForceStarterRule(const std::string &option) -> bool {
+  auto variable = StringUtil::Lower(option);
+  return variable == "1" || variable == "true" || variable == "yes";
+}
+
+Optimizer::Optimizer(const Catalog &catalog, const std::unordered_map<std::string, std::string> &session_variables) : catalog_(catalog) {
+    force_starter_rule_ = IsForceStarterRule(GetSessionVariable(session_variables, "force_optimizer_starter_rule"));
+    vector_index_match_method_ = StringUtil::Lower(GetSessionVariable(session_variables, "vector_index_method"));
+  }
 
 auto Optimizer::Optimize(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
   if (force_starter_rule_) {
@@ -13,6 +30,8 @@ auto Optimizer::Optimize(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef
     p = OptimizeMergeFilterNLJ(p);
     p = OptimizeNLJAsIndexJoin(p);
     p = OptimizeOrderByAsIndexScan(p);
+    p = OptimizeSortLimitAsTopN(p);
+    p = OptimizeAsVectorIndexScan(p);
     p = OptimizeMergeFilterScan(p);
     p = OptimizeSeqScanAsIndexScan(p);
     return p;

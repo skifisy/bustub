@@ -302,11 +302,6 @@ class BusTubInstance {
     return "";
   }
 
-  auto IsForceStarterRule() -> bool {
-    auto variable = StringUtil::Lower(GetSessionVariable("force_optimizer_starter_rule"));
-    return variable == "1" || variable == "true" || variable == "yes";
-  }
-
  private:
   void CmdDisplayTables(ResultWriter &writer);
   void CmdDbgMvcc(const std::vector<std::string> &params, ResultWriter &writer);

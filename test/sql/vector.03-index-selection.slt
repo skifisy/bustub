@@ -12,27 +12,27 @@ EXPLAIN (o) SELECT v1 FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
 Projection { exprs=["#0.0"] }
-  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
 
 query
 EXPLAIN (o) SELECT * FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
-VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
 
 query
 EXPLAIN (o) SELECT v1, ARRAY [1.0, 1.0, 1.0] <-> v1 FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
 Projection { exprs=["#0.0", "l2_dist([1.000000,1.000000,1.000000], #0.0)"] }
-  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
 
 query
 EXPLAIN (o) SELECT v2, v1 FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
 Projection { exprs=["#0.1", "#0.0"] }
-  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
 
 statement ok
 set vector_index_method=none
@@ -53,7 +53,7 @@ EXPLAIN (o) SELECT v1 FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
 Projection { exprs=["#0.0"] }
-  VectorIndexScan { index_oid=0, index_name=t1v1ivfflat, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+  VectorIndexScan { index_oid=0, index_name=t1v1ivfflat, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
 
 statement ok
 set vector_index_method=hnsw
@@ -63,4 +63,4 @@ EXPLAIN (o) SELECT v1 FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 2;
 ----
 === OPTIMIZER ===
 Projection { exprs=["#0.0"] }
-  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=24, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }
+  VectorIndexScan { index_oid=1, index_name=t1v1hnsw, table_oid=29, table_name=t1 base_vector=[1.000000,1.000000,1.000000], limit=2 }

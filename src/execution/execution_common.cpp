@@ -33,6 +33,35 @@
 
 namespace bustub {
 
+auto SortComparator::operator()(const std::pair<Tuple, RID> &left, const std::pair<Tuple, RID> &right) -> bool {
+  for (auto &[order_type, order_expr] : order_bys_) {
+    auto left_key = order_expr->Evaluate(&left.first, schema_);
+    auto right_key = order_expr->Evaluate(&right.first, schema_);
+    switch (order_type) {
+      case OrderByType::ASC:
+      case OrderByType::DEFAULT:
+        if (left_key.CompareLessThan(right_key) == CmpBool::CmpTrue) {
+          return true;
+        }
+        if (left_key.CompareGreaterThan(right_key) == CmpBool::CmpTrue) {
+          return false;
+        }
+        break;
+      case OrderByType::DESC:
+        if (left_key.CompareLessThan(right_key) == CmpBool::CmpTrue) {
+          return false;
+        }
+        if (left_key.CompareGreaterThan(right_key) == CmpBool::CmpTrue) {
+          return true;
+        }
+        break;
+      default:
+        BUSTUB_ASSERT(false, "error");
+    }
+  }
+  return true;
+}
+
 TupleComparator::TupleComparator(std::vector<OrderBy> order_bys) : order_bys_(std::move(order_bys)) {}
 
 auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entry_b) const -> bool {
@@ -455,11 +484,11 @@ void DeleteTuple(RID r, TableInfo *table_info, Transaction *txn, TransactionMana
     txn->AppendWriteSet(table_info->oid_, r);
     UndoLink new_link = {txn->GetTransactionId(), static_cast<int>(txn->GetUndoLogNum()) - 1};
     // 更新tuple_meta和undo_link
-    bool success = UpdateTupleAndUndoLink(
-        txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), true}, {},
-        [txn](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>) {
-          return !IsWriteWriteConflict(txn, &meta);
-        });
+    bool success =
+        UpdateTupleAndUndoLink(txn_mgr, r, new_link, table_heap, txn, {txn->GetTransactionTempTs(), true}, {},
+                               [txn](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>) {
+                                 return !IsWriteWriteConflict(txn, &meta);
+                               });
     if (!success) {
       txn->SetTainted();
       throw ExecutionException("write-write conflict at running time!");
