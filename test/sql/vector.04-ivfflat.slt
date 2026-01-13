@@ -1,0 +1,20 @@
+statement ok
+CREATE TABLE t1(v1 VECTOR(3), v2 integer);
+
+statement ok
+INSERT INTO t1 VALUES (ARRAY [-1.0, 1.0, 1.0], -1), (ARRAY [-3.0, 1.0, 1.0], -3), (ARRAY [-2.0, 1.0, 1.0], -2), (ARRAY [-4.0, 1.0, 1.0], -4), (ARRAY [0.0, 1.0, 1.0], 0), (ARRAY [2.0, 1.0, 1.0], 2), (ARRAY [4.0, 1.0, 1.0], 4), (ARRAY [5.0, 1.0, 1.0], 5);
+
+statement ok
+CREATE INDEX t1v1ivfflat ON t1 USING ivfflat (v1 vector_l2_ops) WITH (lists = 3, probe_lists = 2);
+
+statement ok
+EXPLAIN (o) SELECT v1, v2, ARRAY [1.0, 1.0, 1.0] <-> v1 as distance FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 3;
+
+statement ok
+SELECT v1, v2, ARRAY [1.0, 1.0, 1.0] <-> v1 as distance FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 3;
+
+statement ok
+INSERT INTO t1 VALUES  (ARRAY [1.0, 1.0, 1.0], 1), (ARRAY [3.0, 1.0, 1.0], 3);
+
+statement ok
+SELECT v1, v2, ARRAY [1.0, 1.0, 1.0] <-> v1 as distance FROM t1 ORDER BY ARRAY [1.0, 1.0, 1.0] <-> v1 LIMIT 5;

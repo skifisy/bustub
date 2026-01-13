@@ -3,3 +3,11 @@ CREATE TABLE t1(v1 VECTOR(3), v2 integer);
 
 statement ok
 INSERT INTO t1 VALUES (ARRAY [1.0, 1.0, 1.0], 232), (ARRAY [2.0, 1.0, 1.0], 233), (ARRAY [3.0, 1.0, 1.0], 234), (ARRAY [4.0, 1.0, 1.0], 235);
+
+query
+select * from t1;
+----
+[1,1,1] 232
+[2,1,1] 233
+[3,1,1] 234
+[4,1,1] 235

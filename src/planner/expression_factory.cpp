@@ -8,6 +8,7 @@
 #include "execution/expressions/comparison_expression.h"
 #include "execution/expressions/constant_value_expression.h"
 #include "execution/expressions/logic_expression.h"
+#include "execution/expressions/vector_expression.h"
 #include "execution/plans/window_plan.h"
 #include "planner/planner.h"
 
@@ -100,7 +101,16 @@ auto Planner::GetBinaryExpressionFromFactory(const std::string &op_name, Abstrac
   if (op_name == "or") {
     return std::make_shared<LogicExpression>(std::move(left), std::move(right), LogicType::Or);
   }
-
+  if (op_name == "<->") {
+    return std::make_shared<VectorExpression>(VectorExpressionType::L2Dist, std::move(left), std::move(right));
+  }
+  if (op_name == "<#>") {  // not supported by DuckDB's pg parser...
+    return std::make_shared<VectorExpression>(VectorExpressionType::InnerProduct, std::move(left), std::move(right));
+  }
+  if (op_name == "<=>") {
+    return std::make_shared<VectorExpression>(VectorExpressionType::CosineSimilarity, std::move(left),
+                                              std::move(right));
+  }
   throw Exception(fmt::format("binary op {} not supported in planner yet", op_name));
 }
 
@@ -113,6 +123,24 @@ auto Planner::PlanFuncCall(const BoundFuncCall &expr, const std::vector<Abstract
   }
   if (expr.func_name_ == "construct_array") {
     return std::make_shared<ArrayExpression>(args);
+  }
+  if (expr.func_name_ == "l2_dist") {
+    if (args.size() != 2) {
+      throw Exception(fmt::format("expect 2 args for {}", expr.func_name_));
+    }
+    return std::make_shared<VectorExpression>(VectorExpressionType::L2Dist, args[0], args[1]);
+  }
+  if (expr.func_name_ == "cosine_similarity") {
+    if (args.size() != 2) {
+      throw Exception(fmt::format("expect 2 args for {}", expr.func_name_));
+    }
+    return std::make_shared<VectorExpression>(VectorExpressionType::CosineSimilarity, args[0], args[1]);
+  }
+  if (expr.func_name_ == "inner_product") {
+    if (args.size() != 2) {
+      throw Exception(fmt::format("expect 2 args for {}", expr.func_name_));
+    }
+    return std::make_shared<VectorExpression>(VectorExpressionType::InnerProduct, args[0], args[1]);
   }
   return GetFuncCallFromFactory(expr.func_name_, std::move(args));
 }
