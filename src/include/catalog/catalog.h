@@ -115,6 +115,8 @@ struct IndexInfo {
   IndexType index_type_;
 };
 
+class CatalogPersistence;
+
 /**
  * The Catalog is a non-persistent catalog that is designed for
  * use by executors within the DBMS execution engine. It handles
@@ -135,8 +137,9 @@ class Catalog {
    * @param lock_manager The lock manager in use by the system
    * @param log_manager The log manager in use by the system
    */
-  Catalog(BufferPoolManager *bpm, LockManager *lock_manager, LogManager *log_manager)
-      : bpm_{bpm}, lock_manager_{lock_manager}, log_manager_{log_manager} {}
+  Catalog(BufferPoolManager *bpm, LockManager *lock_manager, LogManager *log_manager);
+
+  ~Catalog();
 
   /**
    * Create a new table and return its metadata.
@@ -218,7 +221,10 @@ class Catalog {
 
   auto GetTableNames() -> std::vector<std::string>;
 
+  std::unique_ptr<CatalogPersistence> catalog_persistance_;
+
  private:
+  friend class CatalogPersistence;
   [[maybe_unused]] BufferPoolManager *bpm_;
   [[maybe_unused]] LockManager *lock_manager_;
   [[maybe_unused]] LogManager *log_manager_;

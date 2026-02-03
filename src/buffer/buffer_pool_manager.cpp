@@ -24,6 +24,7 @@
 #include "common/logger.h"
 #include "common/macros.h"
 #include "storage/disk/disk_scheduler.h"
+#include "storage/page/db_meta_page.h"
 #include "storage/page/page_guard.h"
 
 namespace bustub {
@@ -143,6 +144,9 @@ auto BufferPoolManager::Size() const -> size_t { return num_frames_; }
 auto BufferPoolManager::NewPage() -> page_id_t {
   // 通过increaseDiskSpace来确保在磁盘上有足够的空间
   page_id_t page_id = next_page_id_++;
+  if (meta_page_ != nullptr) {
+    meta_page_->next_page_id_ = next_page_id_;
+  }
   disk_scheduler_->IncreaseDiskSpace(page_id + 1);
   return page_id;
 }
@@ -404,25 +408,21 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
  * TODO(P1): Add implementation
  */
 void BufferPoolManager::FlushAllPages() {
-  // 所有存在于memory中的page，写入disk
-  // TODO(question) 直接遍历frames_？遍历维护的page_table？
-  // 是否要加ReadPageGuard?
-  // 无论是否为dirty都必须要写入磁盘吗？
   std::lock_guard lock(*bpm_latch_);
   std::vector<std::pair<std::shared_ptr<FrameHeader>, std::future<bool>>> future_vec;
-  future_vec.reserve(page_table_.size());
-  for (auto &it : page_table_) {
-    frame_id_t frame_id = it.second;
-    auto &frame = frames_[frame_id];
-    DiskRequest r = {true, frame->GetDataMut(), it.first, {}};
+  for (auto &frame : frames_) {
+    if (frame->page_id_ == INVALID_PAGE_ID || !frame->is_dirty_) {
+      continue;
+    }
+    DiskRequest r = {true, frame->GetDataMut(), frame->page_id_, {}};
     future_vec.emplace_back(frame, r.callback_.get_future());
     disk_scheduler_->Schedule(std::move(r));
   }
-  // for (auto &pair : future_vec) {
-  //   pair.second.get();
-  //   auto &frame = pair.first;
-  //   frame->is_dirty_ = false;
-  // }
+  for (auto &pair : future_vec) {
+    pair.second.get();
+    auto &frame = pair.first;
+    frame->is_dirty_ = false;
+  }
 }
 
 /**
@@ -510,4 +510,47 @@ auto BufferPoolManager::AllocateFrame(page_id_t page_id) -> std::optional<frame_
   return frame_id;
 }
 
+void BufferPoolManager::InitMetaPage() {
+  auto meta_page_id = NewPage();
+  BUSTUB_ASSERT(meta_page_id == 0, "meta page id should be 0");
+  {
+    auto write_guard = WritePage(meta_page_id);
+    auto meta = write_guard.AsMut<DBMetaPage>();
+    meta->Init();
+    meta->next_page_id_ = next_page_id_;
+    meta->num_frames_ = num_frames_;
+    meta->k_dist_ = replacer_->GetK();
+
+    meta_page_guard_ = std::move(write_guard);
+    meta_page_ = meta;
+  }
+}
+
+auto BufferPoolManager::LoadBufferPoolFromFile(DiskManager *disk_manager, LogManager *log_manager)
+    -> std::unique_ptr<BufferPoolManager> {
+  std::vector<char> page(BUSTUB_PAGE_SIZE, 0);
+  disk_manager->ReadPage(DB_META_PAGE_ID, page.data());
+  auto meta = reinterpret_cast<DBMetaPage *>(page.data());
+  BUSTUB_ASSERT(meta->magic_number_ == DB_META_PAGE_MAGIC_NUMBER, "meta page magic number mismatch");
+  BUSTUB_ASSERT(meta->version_ == DB_META_VERSION, "db version number mismatch");
+  auto bpm = std::unique_ptr<BufferPoolManager>(new BufferPoolManager());
+  bpm->bpm_latch_ = std::make_shared<std::mutex>();
+  bpm->disk_scheduler_ = std::make_unique<DiskScheduler>(disk_manager);
+  bpm->replacer_ = std::make_shared<LRUKReplacer>(meta->num_frames_, meta->k_dist_);
+  bpm->disk_scheduler_ = std::make_unique<DiskScheduler>(disk_manager);
+  bpm->log_manager_ = log_manager;
+
+  bpm->num_frames_ = meta->num_frames_;
+  bpm->next_page_id_ = meta->next_page_id_;
+
+  bpm->frames_.reserve(bpm->num_frames_);
+  bpm->page_table_.reserve(bpm->num_frames_);
+  for (size_t i = 0; i < bpm->num_frames_; i++) {
+    bpm->frames_.push_back(std::make_shared<FrameHeader>(i));
+    bpm->free_frames_.push_back(static_cast<int>(i));
+  }
+  bpm->meta_page_guard_ = bpm->WritePage(DB_META_PAGE_ID);
+  bpm->meta_page_ = bpm->meta_page_guard_.AsMut<DBMetaPage>();
+  return bpm;
+}
 }  // namespace bustub

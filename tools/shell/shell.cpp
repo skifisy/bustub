@@ -25,11 +25,15 @@ auto GetWidthOfUtf8(const void *beg, const void *end, size_t *width) -> int {
   return 0;
 }
 
+bustub::BusTubInstance *g_bustub_instance = nullptr;
+
 // NOLINTNEXTLINE
 auto main(int argc, char **argv) -> int {
   ft_set_u8strwid_func(&GetWidthOfUtf8);
 
   auto bustub = std::make_unique<bustub::BusTubInstance>("test.bustub");
+  // 设置全局指针用于信号处理
+  g_bustub_instance = bustub.get();
 
   auto default_prompt = "bustub> ";
   auto emoji_prompt = "\U0001f6c1> ";  // the bathtub emoji
@@ -80,6 +84,16 @@ auto main(int argc, char **argv) -> int {
       if (!disable_tty) {
         char *query_c_str = linenoise(line_prompt.c_str());
         if (query_c_str == nullptr) {
+          // linenoise 处理了 Ctrl+C / Ctrl+D (EOF)
+          std::cout << "\nInterrupt received. Shutting down...\n";
+          if (g_bustub_instance != nullptr) {
+            try {
+              auto writer = bustub::FortTableWriter();
+              g_bustub_instance->ExecuteSql("\\quit", writer);
+            } catch (...) {
+              // 忽略异常
+            }
+          }
           return 0;
         }
         query += query_c_str;
@@ -113,6 +127,9 @@ auto main(int argc, char **argv) -> int {
       bustub->ExecuteSql(query, writer);
       for (const auto &table : writer.tables_) {
         std::cout << table << std::flush;
+      }
+      if (query == "\\quit") {
+        break;
       }
     } catch (bustub::Exception &ex) {
       std::cerr << ex.what() << std::endl;

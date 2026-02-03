@@ -182,6 +182,10 @@ void TableGenerator::GenerateTestTables() {
     }
     Schema schema(cols);
     auto info = exec_ctx_->GetCatalog()->CreateTable(exec_ctx_->GetTransaction(), table_meta.name_, schema);
+    if (info == nullptr) {
+      // Table already exists
+      continue;
+    }
     FillTable(info, &table_meta);
   }
 }

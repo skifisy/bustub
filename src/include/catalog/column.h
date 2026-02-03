@@ -31,6 +31,7 @@ class Column {
   friend class Schema;
 
  public:
+  Column() = default;
   /**
    * Non-variable-length constructor for creating a Column.
    * @param column_name name of the column
@@ -53,6 +54,12 @@ class Column {
       : column_name_(std::move(column_name)), column_type_(type), length_(TypeSize(type, length)) {
     BUSTUB_ASSERT(type == TypeId::VARCHAR || type == TypeId::VECTOR, "Wrong constructor for fixed-size type.");
   }
+
+  Column(std::string column_name, TypeId type, uint32_t length, uint32_t offset)
+      : column_name_(std::move(column_name)),
+        column_type_(type),
+        length_(TypeSize(type, length)),
+        column_offset_(offset) {}
 
   /**
    * Replicate a Column with a different name.

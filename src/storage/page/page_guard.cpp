@@ -18,6 +18,7 @@
 #include "common/config.h"
 #include "common/logger.h"
 #include "storage/disk/disk_scheduler.h"
+#include "buffer/buffer_pool_manager.h"
 
 namespace bustub {
 

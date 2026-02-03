@@ -48,6 +48,8 @@ class TableHeap {
    */
   explicit TableHeap(BufferPoolManager *bpm);
 
+  TableHeap(BufferPoolManager *bpm, page_id_t first_page_id, page_id_t last_page_id);
+
   /**
    * Insert a tuple into the table. If the tuple is too large (>= page_size), return std::nullopt.
    * @param meta tuple meta
@@ -92,6 +94,9 @@ class TableHeap {
 
   /** @return the id of the first page of this table */
   inline auto GetFirstPageId() const -> page_id_t { return first_page_id_; }
+
+  /** @return the id of the last page of this table */
+  inline auto GetLastPageId() -> page_id_t { return last_page_id_; }
 
   /**
    * Update a tuple in place. Should NOT be used in project 3. Implement your project 3 update executor as delete and

@@ -28,6 +28,8 @@
 #include "common/util/string_util.h"
 #include "execution/check_options.h"
 #include "libfort/lib/fort.hpp"
+#include "storage/page/db_meta_page.h"
+#include "storage/page/page_guard.h"
 #include "type/value.h"
 
 namespace bustub {
@@ -280,6 +282,11 @@ class BusTubInstance {
    */
   void GenerateMockTable();
 
+  /**
+   * Shut down the BusTub instance, including flushing all dirty pages to disk
+   */
+  void ShutDown();
+
   // Currently the followings are directly referenced by recovery test, so
   // we cannot do anything on them until someone decides to refactor the recovery test.
 
@@ -308,6 +315,7 @@ class BusTubInstance {
   void CmdTxn(const std::vector<std::string> &params, ResultWriter &writer);
   void CmdDisplayIndices(ResultWriter &writer);
   void CmdDisplayHelp(ResultWriter &writer);
+  void CmdQuit(ResultWriter &writer);
   void WriteOneCell(const std::string &cell, ResultWriter &writer);
 
   void HandleCreateStatement(Transaction *txn, const CreateStatement &stmt, ResultWriter &writer);

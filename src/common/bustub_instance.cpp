@@ -13,11 +13,13 @@
 #include "binder/statement/select_statement.h"
 #include "binder/statement/set_show_statement.h"
 #include "buffer/buffer_pool_manager.h"
+#include "catalog/catalog_persistence.h"
 #include "catalog/schema.h"
 #include "catalog/table_generator.h"
 #include "common/bustub_instance.h"
 #include "common/config.h"
 #include "common/exception.h"
+#include "common/macros.h"
 #include "common/util/string_util.h"
 #include "concurrency/lock_manager.h"
 #include "concurrency/transaction.h"
@@ -36,6 +38,7 @@
 #include "recovery/log_manager.h"
 #include "storage/disk/disk_manager.h"
 #include "storage/disk/disk_manager_memory.h"
+#include "storage/page/db_meta_page.h"
 #include "type/value_factory.h"
 
 namespace bustub {
@@ -47,6 +50,58 @@ auto BusTubInstance::MakeExecutorContext(Transaction *txn, bool is_modify) -> st
 
 BusTubInstance::BusTubInstance(const std::filesystem::path &db_file_name, size_t bpm_size) {
   enable_logging = false;
+  bool is_new_db = !std::filesystem::exists(db_file_name) || std::filesystem::file_size(db_file_name) == 0;
+  if (is_new_db) {
+    // Storage related.
+    disk_manager_ = std::make_unique<DiskManager>(db_file_name);
+
+#ifndef DISABLE_CHECKPOINT_MANAGER
+    // Log related.
+    log_manager_ = std::make_unique<LogManager>(disk_manager_.get());
+#endif
+
+    // We need more frames for GenerateTestTable to work. Therefore, we use 128 instead of the default
+    // buffer pool size specified in `config.h`.
+    buffer_pool_manager_ =
+        std::make_unique<BufferPoolManager>(bpm_size, disk_manager_.get(), LRUK_REPLACER_K, log_manager_.get());
+
+    // 初始化元信息页
+    buffer_pool_manager_->InitMetaPage();
+
+// Transaction (txn) related.
+#ifndef DISABLE_LOCK_MANAGER
+    lock_manager_ = std::make_unique<LockManager>();
+    txn_manager_ = std::make_unique<TransactionManager>(lock_manager_.get());
+#else
+    txn_manager_ = std::make_unique<TransactionManager>();
+#endif
+
+#ifndef DISABLE_LOCK_MANAGER
+    lock_manager_->txn_manager_ = txn_manager_.get();
+
+#ifndef __EMSCRIPTEN__
+    lock_manager_->StartDeadlockDetection();
+#endif
+
+#endif
+
+#ifndef DISABLE_CHECKPOINT_MANAGER
+    // Checkpoint related.
+    checkpoint_manager_ =
+        std::make_unique<CheckpointManager>(txn_manager_.get(), log_manager_.get(), buffer_pool_manager_.get());
+#endif
+    // Catalog related.
+    catalog_ = std::make_unique<Catalog>(buffer_pool_manager_.get(), lock_manager_.get(), log_manager_.get());
+    catalog_->catalog_persistance_->InitializeSystemTables();
+
+    txn_manager_->catalog_ = catalog_.get();
+
+    // Execution engine related.
+    execution_engine_ =
+        std::make_unique<ExecutionEngine>(buffer_pool_manager_.get(), txn_manager_.get(), catalog_.get());
+
+    return;
+  }
 
   // Storage related.
   disk_manager_ = std::make_unique<DiskManager>(db_file_name);
@@ -58,13 +113,7 @@ BusTubInstance::BusTubInstance(const std::filesystem::path &db_file_name, size_t
 
   // We need more frames for GenerateTestTable to work. Therefore, we use 128 instead of the default
   // buffer pool size specified in `config.h`.
-  try {
-    buffer_pool_manager_ =
-        std::make_unique<BufferPoolManager>(bpm_size, disk_manager_.get(), LRUK_REPLACER_K, log_manager_.get());
-  } catch (NotImplementedException &e) {
-    std::cerr << "BufferPoolManager is not implemented, only mock tables are supported." << std::endl;
-    buffer_pool_manager_ = nullptr;
-  }
+  buffer_pool_manager_ = BufferPoolManager::LoadBufferPoolFromFile(disk_manager_.get(), log_manager_.get());
 
 // Transaction (txn) related.
 #ifndef DISABLE_LOCK_MANAGER
@@ -91,6 +140,7 @@ BusTubInstance::BusTubInstance(const std::filesystem::path &db_file_name, size_t
 
   // Catalog related.
   catalog_ = std::make_unique<Catalog>(buffer_pool_manager_.get(), lock_manager_.get(), log_manager_.get());
+  catalog_->catalog_persistance_->LoadCatalog();
 
   txn_manager_->catalog_ = catalog_.get();
 
@@ -219,6 +269,7 @@ void BusTubInstance::CmdDisplayHelp(ResultWriter &writer) {
 \txn <txn_id>: switch to txn
 \txn gc: run garbage collection
 \txn -1: exit txn mode
+\quit: exit the shell
 
 BusTub shell currently only supports a small set of Postgres queries. We'll set
 up a doc describing the current status later. It will silently ignore some parts
@@ -229,6 +280,11 @@ queries after you have implemented necessary query executors. Use `explain` to
 see the execution plan of your query.
 )";
   WriteOneCell(help, writer);
+}
+
+void BusTubInstance::CmdQuit(ResultWriter &writer) {
+  writer.OneCell("Bye!\n");
+  ShutDown();
 }
 
 auto BusTubInstance::ExecuteSql(const std::string &sql, ResultWriter &writer,
@@ -275,6 +331,10 @@ auto BusTubInstance::ExecuteSqlTxn(const std::string &sql, ResultWriter &writer,
     if (StringUtil::StartsWith(sql, "\\txn")) {
       auto split = StringUtil::Split(sql, " ");
       CmdTxn(split, writer);
+      return true;
+    }
+    if (sql == "\\quit") {
+      CmdQuit(writer);
       return true;
     }
     throw Exception(fmt::format("unsupported internal command: {}", sql));
@@ -468,5 +528,7 @@ void BusTubInstance::CmdTxn(const std::vector<std::string> &params, ResultWriter
   }
   writer.OneCell("unsupported txn cmd.");
 }
+
+void BusTubInstance::ShutDown() { buffer_pool_manager_->FlushAllPages(); }
 
 }  // namespace bustub

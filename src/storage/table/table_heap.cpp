@@ -39,6 +39,9 @@ TableHeap::TableHeap(BufferPoolManager *bpm) : bpm_(bpm) {
   first_page->Init();
 }
 
+TableHeap::TableHeap(BufferPoolManager *bpm, page_id_t first_page_id, page_id_t last_page_id)
+    : bpm_(bpm), first_page_id_(first_page_id), last_page_id_(last_page_id) {}
+
 TableHeap::TableHeap(bool create_table_heap) : bpm_(nullptr) {}
 
 auto TableHeap::InsertTuple(const TupleMeta &meta, const Tuple &tuple, LockManager *lock_mgr, Transaction *txn,

@@ -1,7 +1,17 @@
 
 
 #include "catalog/catalog.h"
+#include <memory>
+#include "catalog/catalog_persistence.h"
 namespace bustub {
+
+Catalog::Catalog(BufferPoolManager *bpm, LockManager *lock_manager, LogManager *log_manager)
+    : bpm_{bpm}, lock_manager_{lock_manager}, log_manager_{log_manager} {
+  catalog_persistance_ = std::make_unique<CatalogPersistence>(this);
+}
+
+Catalog::~Catalog() = default;
+
 auto Catalog::CreateTable(Transaction *txn, const std::string &table_name, const Schema &schema, bool create_table_heap)
     -> std::shared_ptr<TableInfo> {
   if (table_names_.count(table_name) != 0) {
@@ -31,6 +41,10 @@ auto Catalog::CreateTable(Transaction *txn, const std::string &table_name, const
   table_names_.emplace(table_name, table_oid);
   index_names_.emplace(table_name, std::unordered_map<std::string, index_oid_t>{});
 
+  // persist table info
+  if (create_table_heap) {
+    catalog_persistance_->PersistTable(txn, meta);
+  }
   return meta;
 }
 

@@ -24,7 +24,9 @@
 #include "buffer/lru_k_replacer.h"
 #include "common/config.h"
 #include "recovery/log_manager.h"
+#include "storage/disk/disk_manager.h"
 #include "storage/disk/disk_scheduler.h"
+#include "storage/page/db_meta_page.h"
 #include "storage/page/page.h"
 #include "storage/page/page_guard.h"
 
@@ -134,8 +136,12 @@ class BufferPoolManager {
   auto FlushPage(page_id_t page_id) -> bool;
   void FlushAllPages();
   auto GetPinCount(page_id_t page_id) -> std::optional<size_t>;
+  void InitMetaPage();
+  static auto LoadBufferPoolFromFile(DiskManager *disk_manager, LogManager *log_manager)
+      -> std::unique_ptr<BufferPoolManager>;
 
  private:
+  BufferPoolManager() = default;
   /**
    * @brief 为page_id分配一个frame
    *
@@ -147,7 +153,7 @@ class BufferPoolManager {
   auto AllocateFrame(page_id_t page_id) -> std::optional<frame_id_t>;
 
   /** @brief The number of frames in the buffer pool. */
-  const size_t num_frames_;
+  size_t num_frames_;
 
   /** @brief The next page ID to be allocated.  */
   std::atomic<page_id_t> next_page_id_;
@@ -180,6 +186,10 @@ class BufferPoolManager {
    * Note: Please ignore this for P1.
    */
   LogManager *log_manager_ __attribute__((__unused__));
+
+  // meta page
+  WritePageGuard meta_page_guard_;
+  DBMetaPage *meta_page_{nullptr};
 
   /**
    * TODO(P1): You may add additional private members and helper functions if you find them necessary.
